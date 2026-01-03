@@ -197,6 +197,7 @@ char *OUTPUT = NULL;
 char *COMMIT_ID = NULL;
 int JOBS = 8;
 bool FORCE = false; // Force rebuild all files
+bool STATIC_BUILD = false; // Track if we're doing a static build
 // Not only args, but (char **) in fact.
 void add_args(char ***argv, const char *arg)
 {
@@ -697,8 +698,11 @@ void default_cflags(void)
 	check_and_add_cflag("-ftrivial-auto-var-init=pattern", false);
 	check_and_add_cflag("-fcf-protection=full", false);
 	check_and_add_cflag("-flto=auto", false);
-	check_and_add_cflag("-fPIE", false);
-	check_and_add_cflag("-pie", false);
+	// PIE is incompatible with static linking on some architectures (e.g., aarch64)
+	if (!STATIC_BUILD) {
+		check_and_add_cflag("-fPIE", false);
+		check_and_add_cflag("-pie", false);
+	}
 	check_and_add_cflag("-Wl,-z,relro", false);
 	check_and_add_cflag("-Wl,-z,noexecstack", false);
 	check_and_add_cflag("-Wl,-z,now", false);
@@ -770,6 +774,7 @@ int main(int argc, char **argv)
 				error("Error: Invalid number of jobs: %s", argv[i]);
 			}
 		} else if (strcmp(argv[i], "--static") == 0 || strcmp(argv[i], "-s") == 0) {
+			STATIC_BUILD = true;
 			check_and_add_cflag("-static", true);
 		} else if (strcmp(argv[i], "--core-only") == 0 || strcmp(argv[i], "-c") == 0) {
 			core_only = true;
@@ -790,7 +795,7 @@ int main(int argc, char **argv)
 		sprintf(define_commit, "-DRURI_COMMIT_ID=\"%s\"", COMMIT_ID);
 		check_and_add_cflag(define_commit, false);
 	} else {
-		check_and_add_cflag("-DRURI_COMMIT_ID=unknown", false);
+		check_and_add_cflag("-DRURI_COMMIT_ID=\"unknown\"", false);
 	}
 	if (!core_only) {
 		check_and_add_lib("-lcap", true);

@@ -28,7 +28,7 @@
  *
  */
 #include "include/ruri.h"
-#include "src/fakepid/libfakepid_embedded.h"
+#include "fakepid/libfakepid_embedded.h"
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -77,6 +77,43 @@ static bool busybox_exists(char *_Nonnull container_dir)
 		return false;
 	}
 	if (!S_ISREG(busybox_stat.st_mode)) {
+		close(fd);
+		return false;
+	}
+	close(fd);
+	return true;
+}
+static bool is_android_container(char *_Nonnull container_dir)
+{
+	/*
+	 * Check if this is an Android container by looking for system/bin.
+	 * Android containers have /system/bin instead of /bin.
+	 */
+	char system_bin_path[PATH_MAX] = { '\0' };
+	sprintf(system_bin_path, "%s/system/bin", container_dir);
+	struct stat st;
+	if (stat(system_bin_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+		return true;
+	}
+	return false;
+}
+static bool android_shell_exists(char *_Nonnull container_dir)
+{
+	/*
+	 * Check if /system/bin/sh exists in Android container.
+	 */
+	char sh_path[PATH_MAX] = { '\0' };
+	sprintf(sh_path, "%s/system/bin/sh", container_dir);
+	int fd = open(sh_path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0) {
+		return false;
+	}
+	struct stat sh_stat;
+	if (fstat(fd, &sh_stat) != 0) {
+		close(fd);
+		return false;
+	}
+	if (!S_ISREG(sh_stat.st_mode)) {
 		close(fd);
 		return false;
 	}
@@ -855,7 +892,19 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Set default command for exec().
 	if (container->command[0] == NULL) {
-		if (su_biany_exist(container->container_dir) && container->user == NULL) {
+		// Check if redroid mode is enabled or this is an Android container
+		if (container->redroid_mode || is_android_container(container->container_dir)) {
+			if (android_shell_exists(container->container_dir)) {
+				container->command[0] = "/system/bin/sh";
+				container->command[1] = NULL;
+			} else {
+				ruri_warning("{yellow}Warning: Android/redroid container but /system/bin/sh not found\n");
+				ruri_warning("{yellow}Note: Android containers may require APEX modules to be mounted\n");
+				ruri_warning("{yellow}Consider running with init system or providing explicit command\n{clear}");
+				container->command[0] = "/bin/sh";
+				container->command[1] = NULL;
+			}
+		} else if (su_biany_exist(container->container_dir) && container->user == NULL) {
 			container->command[0] = "/bin/su";
 			container->command[1] = "-";
 			container->command[2] = NULL;

@@ -51,7 +51,7 @@ jobs:
     permissions:
       contents: read
     strategy:
-      fail-fast: true  # Cancel all other jobs when one fails
+      fail-fast: false  # Allow other architectures to continue even if one fails
       matrix:
         include:
           - arch: x86_64
