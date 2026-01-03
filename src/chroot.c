@@ -683,6 +683,41 @@ static void set_oom_score(int score)
 	write(fd, score_str, strlen(score_str));
 	close(fd);
 }
+static void fake_proc_pid1(void)
+{
+	/*
+	 * Fake /proc to make the init process think it's PID 1.
+	 * This function creates bind mounts from the actual process /proc entries
+	 * to /proc/1, making the container init appear as PID 1.
+	 * 
+	 * The approach:
+	 * 1. Get current PID
+	 * 2. Create /proc/1 directory if needed
+	 * 3. Bind mount /proc/self to /proc/1
+	 * 4. This makes any process reading /proc/1 see itself
+	 */
+	pid_t actual_pid = getpid();
+	
+	// Create /proc/1 if it doesn't exist
+	mkdir("/proc/1", S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+	
+	// Bind mount /proc/self to /proc/1
+	// This makes /proc/1 always refer to the current process
+	if (mount("/proc/self", "/proc/1", NULL, MS_BIND, NULL) == -1) {
+		// If bind mount fails, try alternative approach
+		// Create symlink from /proc/1 to actual pid
+		char actual_proc[PATH_MAX];
+		sprintf(actual_proc, "/proc/%d", actual_pid);
+		
+		// Remove /proc/1 if it exists
+		rmdir("/proc/1");
+		
+		// Create symlink
+		if (symlink(actual_proc, "/proc/1") == -1) {
+			// Silently fail - not critical
+		}
+	}
+}
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 {
@@ -771,6 +806,10 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
+	// Fake /proc for pid1 namespace.
+	if (container->fake_proc_pid1_ns) {
+		fake_proc_pid1();
+	}
 	// Fix /etc/mtab.
 	if (!container->just_chroot) {
 		remove("/etc/mtab");
@@ -895,6 +934,10 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
+	// Fake /proc for pid1 namespace.
+	if (container->fake_proc_pid1_ns) {
+		fake_proc_pid1();
+	}
 	// Setup binfmt_misc.
 	if (container->cross_arch != NULL) {
 		setup_binfmt_misc(container);
