@@ -686,6 +686,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 			}
 		} else if (strcmp(argv[index], "-z") == 0 || strcmp(argv[index], "--enable-tty-signals") == 0) {
 			container->enable_tty_signals = true;
+		} else if (strcmp(argv[index], "-1") == 0 || strcmp(argv[index], "--fake-proc-pid1-namespace") == 0) {
+			container->fake_proc_pid1_ns = true;
 		}
 		// If use_config_file is true.
 		// The first unrecognized argument will be treated as command to exec in container.

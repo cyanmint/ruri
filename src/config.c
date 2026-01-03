@@ -88,6 +88,7 @@ void ruri_init_config(struct RURI_CONTAINER *_Nonnull container)
 	container->masked_path[0] = NULL;
 	container->enable_tty_signals = false;
 	container->skip_setgroups = false;
+	container->fake_proc_pid1_ns = false;
 }
 static int pmcrts(const char *s1, const char *s2)
 {
@@ -391,6 +392,10 @@ char *ruri_container_info_to_k2v(const struct RURI_CONTAINER *_Nonnull container
 	// skip_setgroups.
 	ret = k2v_add_comment(ret, "Skip setgroups() call.");
 	ret = k2v_add_config(bool, ret, "skip_setgroups", container->skip_setgroups);
+	ret = k2v_add_newline(ret);
+	// fake_proc_pid1_ns.
+	ret = k2v_add_comment(ret, "Fake /proc and pid namespace to make init think it's pid1.");
+	ret = k2v_add_config(bool, ret, "fake_proc_pid1_ns", container->fake_proc_pid1_ns);
 	return ret;
 }
 void ruri_read_config(struct RURI_CONTAINER *_Nonnull container, const char *_Nonnull path)
@@ -529,6 +534,8 @@ void ruri_read_config(struct RURI_CONTAINER *_Nonnull container, const char *_No
 	container->masked_path[maskedlen] = NULL;
 	// Get enable_tty_signals.
 	container->enable_tty_signals = k2v_get_key(bool, "enable_tty_signals", buf);
+	// Get fake_proc_pid1_ns.
+	container->fake_proc_pid1_ns = k2v_get_key(bool, "fake_proc_pid1_ns", buf);
 	// Get command.
 	int comlen = k2v_get_key(char_array, "command", buf, container->command, RURI_MAX_COMMANDS);
 	container->command[comlen] = NULL;
@@ -795,6 +802,12 @@ void ruri_correct_config(const char *_Nonnull path)
 		container.oom_score_adj = 0;
 	} else {
 		container.oom_score_adj = k2v_get_key(int, "oom_score_adj", buf);
+	}
+	if (!have_key("fake_proc_pid1_ns", buf)) {
+		ruri_warning("{green}No key fake_proc_pid1_ns found, set to false\n{clear}");
+		container.fake_proc_pid1_ns = false;
+	} else {
+		container.fake_proc_pid1_ns = k2v_get_key(bool, "fake_proc_pid1_ns", buf);
 	}
 	free(buf);
 	unlink(path);

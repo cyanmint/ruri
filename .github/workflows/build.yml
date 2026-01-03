@@ -51,93 +51,121 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: true  # Cancel all other jobs when one fails
       matrix:
-        arch: [x86_64, x86, aarch64, armhf, armv7, ppc64le, loongarch64, riscv64, s390x]
-        #arch: [x86_64, x86, aarch64, armhf, armv7, ppc64le, loongarch64, riscv64]
+        include:
+          - arch: x86_64
+            alpine_arch: x86_64
+          - arch: x86
+            alpine_arch: x86
+          - arch: aarch64
+            alpine_arch: aarch64
+          - arch: armhf
+            alpine_arch: armhf
+          - arch: armv7
+            alpine_arch: armv7
+          - arch: ppc64le
+            alpine_arch: ppc64le
+          - arch: riscv64
+            alpine_arch: riscv64
+          - arch: s390x
+            alpine_arch: s390x
     env:
       ARCHITECTURE: ${{ matrix.arch }}
+      ALPINE_ARCH: ${{ matrix.alpine_arch }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get --no-install-recommends -y install \
-            binutils build-essential libcap-dev libseccomp-dev make qemu-user-static xz-utils
+      - name: Set up QEMU for multi-arch
+        uses: docker/setup-qemu-action@v3
 
-      - name: Build ruri for containers
-        run: |
-          cd build
-          git clone --depth 1 https://github.com/moe-hacker/ruri.git
-          cd ruri
-          cc -Wl,--gc-sections -static src/*.c src/easteregg/*.c -o ruri -lcap -lseccomp -lpthread
-          cp ./ruri ../../
-
-      - name: Download alpine rootfs for ${{ matrix.arch }}
-        env:
-          URL: https://dl-cdn.alpinelinux.org/alpine/v3.22/releases
-        run: |
-          cd build
-          mkdir -p $ARCHITECTURE
-
-          wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O yq
-          sudo mv yq /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
-
-          FILE=$(curl -s "$URL/$ARCHITECTURE/latest-releases.yaml" | yq '.[] | select(.flavor == "alpine-minirootfs") | .file')
-          wget "$URL/$ARCHITECTURE/$FILE"
-          tar -xzf "$FILE" -C "$ARCHITECTURE"
-
-      - name: Build for ${{ matrix.arch }}
+      - name: Build for ${{ matrix.arch }} using Alpine Docker
         shell: bash
         run: |
-          cd build
-          cp build.sh "$ARCHITECTURE/build.sh"
-          sudo chmod +x ../ruri
-          sudo chmod +x "$ARCHITECTURE/build.sh"
-
-          case "$ARCHITECTURE" in
-            x86_64|x86)
-              sudo ../ruri ./$ARCHITECTURE /bin/sh /build.sh
+          # Map architecture names for Alpine
+          case "$ALPINE_ARCH" in
+            x86)
+              DOCKER_ARCH="386"
               ;;
-            aarch64|armhf|ppc64le|armv7|riscv64|s390x|loongarch64)
-              if [ "$ARCHITECTURE" = "armv7" ]; then
-                sudo ../ruri -a armv7 -q /usr/bin/qemu-arm-static ./$ARCHITECTURE /bin/sh /build.sh
-              else
-                sudo ../ruri -a $ARCHITECTURE -q /usr/bin/qemu-$ARCHITECTURE-static ./$ARCHITECTURE /bin/sh /build.sh
-              fi
+            x86_64)
+              DOCKER_ARCH="amd64"
               ;;
-          esac
-          PATH_BK=$(pwd)
-          case "$ARCHITECTURE" in
-            x86_64|x86)
-              cd $ARCHITECTURE/output&&./ruri -v||exit 1
-              cd $PATH_BK
+            aarch64)
+              DOCKER_ARCH="arm64"
               ;;
-            aarch64|armhf|ppc64le|armv7|riscv64|s390x|loongarch64)
-              if [ "$ARCHITECTURE" = "armv7" ]; then
-                cd $ARCHITECTURE/output&&/usr/bin/qemu-arm-static ./ruri -v||exit 1
-                cd $PATH_BK
-              else
-                cd $ARCHITECTURE/output&& /usr/bin/qemu-$ARCHITECTURE-static ./ruri -v||exit 1
-                cd $PATH_BK
-              fi
+            armv7|armhf)
+              DOCKER_ARCH="arm/v7"
+              ;;
+            ppc64le)
+              DOCKER_ARCH="ppc64le"
+              ;;
+            riscv64)
+              DOCKER_ARCH="riscv64"
+              ;;
+            s390x)
+              DOCKER_ARCH="s390x"
               ;;
           esac
-          cd $PATH_BK
 
-          (cd $ARCHITECTURE/output && tar -cf ../../../$ARCHITECTURE.tar .)
-          (cd $ARCHITECTURE/output3 && tar -cf ../../../$ARCHITECTURE-core.tar .)
-          if [[ "$ARCHITECTURE" =~ ^(x86_64|x86|aarch64|armhf|ppc64le|armv7)$ ]]; then
-            (cd $ARCHITECTURE/output2 && tar -cf ../../../$ARCHITECTURE-upx.tar .)
+          # Run build in Alpine container for the target architecture
+          docker run --rm --platform linux/$DOCKER_ARCH \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            alpine:latest \
+            sh -c '
+              set -e
+              
+              # Install build dependencies
+              apk add --no-cache make clang git libseccomp-dev libseccomp-static \
+                libcap-static libcap-dev upx || true
+              
+              # Create output directories
+              mkdir -p output output2 output3
+              
+              # Build fakepid library
+              cd src/fakepid
+              CC=clang make clean
+              CC=clang make
+              cd ../..
+              
+              # Build ruri
+              clang build.c -o build-ruri
+              ./build-ruri -s -f
+              
+              cp ruri output/ruri
+              cp LICENSE output/LICENSE
+              
+              cp ruri output2/ruri
+              cp LICENSE output2/LICENSE
+              
+              ./build-ruri -s -c -f
+              cp ruri output3/ruri
+              cp LICENSE output3/LICENSE
+              
+              # UPX compression for supported architectures
+              case "'$ARCHITECTURE'" in
+                x86_64|x86|aarch64|armhf|armv7|ppc64le)
+                  if command -v upx >/dev/null 2>&1; then
+                    upx --best output2/ruri || true
+                    upx --best output3/ruri || true
+                  fi
+                  ;;
+              esac
+            '
+
+          # Create tarballs
+          (cd output && tar -cf ../$ARCHITECTURE.tar .)
+          (cd output3 && tar -cf ../$ARCHITECTURE-core.tar .)
+          if [[ "$ARCHITECTURE" =~ ^(x86_64|x86|aarch64|armhf|armv7|ppc64le)$ ]]; then
+            (cd output2 && tar -cf ../$ARCHITECTURE-upx.tar .)
           fi
 
-          cd $GITHUB_WORKSPACE
+          # Rename x86 to i386 for consistency
           if [[ "$ARCHITECTURE" == "x86" ]]; then
-            mv $ARCHITECTURE.tar i386.tar
-            mv $ARCHITECTURE-upx.tar i386-upx.tar
-            mv $ARCHITECTURE-core.tar i386-core.tar
+            [ -f $ARCHITECTURE.tar ] && mv $ARCHITECTURE.tar i386.tar
+            [ -f $ARCHITECTURE-core.tar ] && mv $ARCHITECTURE-core.tar i386-core.tar
+            [ -f $ARCHITECTURE-upx.tar ] && mv $ARCHITECTURE-upx.tar i386-upx.tar
           fi
 
       - name: Upload artifacts

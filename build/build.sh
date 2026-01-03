@@ -18,20 +18,33 @@ done
 
 mkdir output output2 output3
 
-git clone --depth 1 https://github.com/moe-hacker/ruri.git
+# Check if ruri directory already exists (e.g., copied from host)
+if [ ! -d "ruri" ]; then
+    git clone --depth 1 https://github.com/moe-hacker/ruri.git
+fi
 cd ruri
+
+# Build fakepid library and embedded header
+cd src/fakepid
+CC=clang make
+cd ../..
+
+# Build ruri (with embedded libfakepid.so)
 cc build.c -o build-ruri
 ./build-ruri -s -f
 
 cp ruri ../output/ruri
 cp LICENSE ../output/LICENSE
+# Note: libfakepid.so is now embedded in ruri binary
 
 cp ruri ../output2/ruri
 cp LICENSE ../output2/LICENSE
+# Note: libfakepid.so is now embedded in ruri binary
 
 ./build-ruri -s -c -f
 cp ruri ../output3/ruri
 cp LICENSE ../output3/LICENSE
+# Note: libfakepid.so is now embedded in ruri binary
 
 if command -v upx >/dev/null 2>&1; then
     cd ..
