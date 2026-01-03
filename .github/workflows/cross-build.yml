@@ -1,0 +1,245 @@
+name: Cross-compile release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'src/**'
+      - 'build/**'
+      - 'build.c'
+      - '.github/**'
+    tags:
+      - "v*"
+  pull_request:
+
+jobs:
+  update:
+    name: Fetch Latest Version
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.fetch_version.outputs.release }}
+      version: ${{ steps.fetch_version.outputs.version }}
+      release_name: ${{ steps.fetch_version.outputs.release_name }}
+      build_time: ${{ steps.fetch_version.outputs.build_time }}
+    steps:
+      - name: fetch latest version
+        id: fetch_version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            version="${{ github.ref_name }}"
+            release_name="ruri ${{ github.ref_name }} Release"
+          else
+            response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -L "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+            version=$(echo "$response" | jq -r .tag_name)
+            release_name=$(echo "$response" | jq -r .name)
+          fi
+
+          if [[ -n "$version" && "$version" != "null" && -n "$release_name" && "$release_name" != "null" ]]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+          fi
+
+          build_time="UTC $(TZ=UTC date '+%Y%m%d%H%M')"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name" >> $GITHUB_OUTPUT
+          echo "build_time=$build_time" >> $GITHUB_OUTPUT
+
+  cross-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false  # Don't cancel other jobs on failure - we want to see all results
+      matrix:
+        include:
+          - arch: x86_64
+            musl_target: x86_64-linux-musl
+          - arch: x86
+            musl_target: i686-linux-musl
+          - arch: aarch64
+            musl_target: aarch64-linux-musl
+          - arch: armv7
+            musl_target: armv7l-linux-musleabihf
+          - arch: armhf
+            musl_target: arm-linux-musleabihf
+          - arch: ppc64le
+            musl_target: powerpc64le-linux-musl
+          - arch: riscv64
+            musl_target: riscv64-linux-musl
+          - arch: s390x
+            musl_target: s390x-linux-musl
+    env:
+      ARCHITECTURE: ${{ matrix.arch }}
+      MUSL_TARGET: ${{ matrix.musl_target }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install musl cross-compilation toolchain
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y wget xz-utils upx-ucl
+          
+          # Download pre-built musl cross-compiler from musl.cc
+          mkdir -p /tmp/musl-cross
+          cd /tmp/musl-cross
+          
+          # musl.cc provides pre-built static musl cross-compilers
+          MUSL_VERSION="11.2.1"
+          
+          case "$MUSL_TARGET" in
+            x86_64-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/x86_64-linux-musl-cross.tgz"
+              ;;
+            i686-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/i686-linux-musl-cross.tgz"
+              ;;
+            aarch64-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/aarch64-linux-musl-cross.tgz"
+              ;;
+            armv7l-linux-musleabihf)
+              TOOLCHAIN_URL="https://musl.cc/armv7l-linux-musleabihf-cross.tgz"
+              ;;
+            arm-linux-musleabihf)
+              TOOLCHAIN_URL="https://musl.cc/arm-linux-musleabihf-cross.tgz"
+              ;;
+            powerpc64le-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/powerpc64le-linux-musl-cross.tgz"
+              ;;
+            riscv64-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/riscv64-linux-musl-cross.tgz"
+              ;;
+            s390x-linux-musl)
+              TOOLCHAIN_URL="https://musl.cc/s390x-linux-musl-cross.tgz"
+              ;;
+            *)
+              echo "Unsupported architecture: $MUSL_TARGET"
+              exit 1
+              ;;
+          esac
+          
+          echo "Downloading toolchain from $TOOLCHAIN_URL"
+          wget -q "$TOOLCHAIN_URL" -O toolchain.tgz
+          tar -xzf toolchain.tgz
+          
+          # Move to /opt and add to PATH
+          sudo mv ${MUSL_TARGET}-cross /opt/
+          echo "/opt/${MUSL_TARGET}-cross/bin" >> $GITHUB_PATH
+
+      - name: Build static binary for ${{ matrix.arch }}
+        shell: bash
+        run: |
+          export PATH="/opt/${MUSL_TARGET}-cross/bin:$PATH"
+          export CC="${MUSL_TARGET}-gcc"
+          export AR="${MUSL_TARGET}-ar"
+          export RANLIB="${MUSL_TARGET}-ranlib"
+          export STRIP="${MUSL_TARGET}-strip"
+          
+          # Verify toolchain is available
+          which ${MUSL_TARGET}-gcc
+          ${MUSL_TARGET}-gcc --version
+
+          # Create output directories
+          mkdir -p output output2 output3
+
+          # Build fakepid library (static)
+          cd src/fakepid
+          make clean
+          make LDFLAGS="-static"
+          cd ../..
+
+          # Build ruri (static)
+          ${CC} build.c -o build-ruri
+          ./build-ruri -s -f
+
+          cp ruri output/ruri
+          cp LICENSE output/LICENSE
+
+          cp ruri output2/ruri
+          cp LICENSE output2/LICENSE
+
+          ./build-ruri -s -c -f
+          cp ruri output3/ruri
+          cp LICENSE output3/LICENSE
+          
+          # Verify binaries are static
+          file output/ruri
+          ldd output/ruri 2>&1 | grep -q "not a dynamic executable" || echo "Warning: Binary may not be fully static"
+
+          # UPX compression for supported architectures
+          case "$ARCHITECTURE" in
+            x86_64|x86|aarch64|armhf|armv7|ppc64le)
+              upx --best output2/ruri || true
+              upx --best output3/ruri || true
+              ;;
+          esac
+
+          # Create tarballs
+          (cd output && tar -cf ../$ARCHITECTURE.tar .)
+          (cd output3 && tar -cf ../$ARCHITECTURE-core.tar .)
+          if [[ "$ARCHITECTURE" =~ ^(x86_64|x86|aarch64|armhf|armv7|ppc64le)$ ]]; then
+            (cd output2 && tar -cf ../$ARCHITECTURE-upx.tar .)
+          fi
+
+          # Rename x86 to i386 for consistency
+          if [[ "$ARCHITECTURE" == "x86" ]]; then
+            [ -f $ARCHITECTURE.tar ] && mv $ARCHITECTURE.tar i386.tar
+            [ -f $ARCHITECTURE-core.tar ] && mv $ARCHITECTURE-core.tar i386-core.tar
+            [ -f $ARCHITECTURE-upx.tar ] && mv $ARCHITECTURE-upx.tar i386-upx.tar
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruri-cross-${{ matrix.arch }}
+          path: |
+            ./*.tar
+          retention-days: 7
+
+  release:
+    name: Push Release (Cross-compiled)
+    needs: [update, cross-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: |
+      (github.event_name == 'push' && needs.update.outputs.release == 'true') ||
+      startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download All Build
+        uses: actions/download-artifact@v4
+        with:
+          path: ./all
+
+      - name: Move all .tar files
+        run: |
+          find ./all -type f -name "*.tar" -exec mv {} ./ \;
+          # Upload only when file > 50kb
+          for file in ./*.tar; do
+            if [ ! -s "$file" ] || [ $(stat -c%s "$file") -lt 51200 ]; then
+              echo "Removing $file as it is smaller than 50kb"
+              rm "$file"
+            fi
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.2.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.update.outputs.version }}
+          name: ${{ needs.update.outputs.release_name }} (Cross-compiled)
+          body: |
+            This is ruri binary release built with musl-cross-make cross-compilation.
+            NOTE:
+            *-upx means the binary is upx compressed.
+            *-core means the binary is built without libseccomp and libcap, and with .rurienv disabled.
+            ruri use musl as libc to build by default, for smaller binary size and better security.
+            Build time: ${{ needs.update.outputs.build_time }}
+            
+            **Build method:** True cross-compilation using musl-cross-make toolchains
+          files: |
+            *.tar

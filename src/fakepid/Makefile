@@ -2,7 +2,7 @@
 
 CC ?= gcc
 CFLAGS = -fPIC -Wall -O2
-LDFLAGS = -shared -ldl
+LDFLAGS ?= -shared -ldl
 
 all: libfakepid.so libfakepid_embedded.h
 
