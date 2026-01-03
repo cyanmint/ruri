@@ -55,92 +55,51 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            musl_target: x86_64-linux-musl
+            zig_target: x86_64-linux-musl
           - arch: x86
-            musl_target: i686-linux-musl
+            zig_target: x86-linux-musl
           - arch: aarch64
-            musl_target: aarch64-linux-musl
+            zig_target: aarch64-linux-musl
           - arch: armv7
-            musl_target: armv7l-linux-musleabihf
-          - arch: armhf
-            musl_target: arm-linux-musleabihf
+            zig_target: arm-linux-musleabihf
           - arch: ppc64le
-            musl_target: powerpc64le-linux-musl
+            zig_target: powerpc64le-linux-musl
           - arch: riscv64
-            musl_target: riscv64-linux-musl
+            zig_target: riscv64-linux-musl
           - arch: s390x
-            musl_target: s390x-linux-musl
+            zig_target: s390x-linux-musl
     env:
       ARCHITECTURE: ${{ matrix.arch }}
-      MUSL_TARGET: ${{ matrix.musl_target }}
+      ZIG_TARGET: ${{ matrix.zig_target }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install musl cross-compilation toolchain
+      - name: Install Zig for cross-compilation
         run: |
           set -e
+          # Download and install Zig (has built-in cross-compilation support)
+          wget -q https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
+          tar -xf zig-linux-x86_64-0.11.0.tar.xz
+          sudo mv zig-linux-x86_64-0.11.0 /opt/zig
+          echo "/opt/zig" >> $GITHUB_PATH
+          
+          # Install other dependencies
           sudo apt-get update
-          sudo apt-get install -y wget xz-utils upx-ucl
-          
-          # Download pre-built musl cross-compiler from musl.cc
-          mkdir -p /tmp/musl-cross
-          cd /tmp/musl-cross
-          
-          # musl.cc provides pre-built static musl cross-compilers
-          MUSL_VERSION="11.2.1"
-          
-          case "$MUSL_TARGET" in
-            x86_64-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/x86_64-linux-musl-cross.tgz"
-              ;;
-            i686-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/i686-linux-musl-cross.tgz"
-              ;;
-            aarch64-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/aarch64-linux-musl-cross.tgz"
-              ;;
-            armv7l-linux-musleabihf)
-              TOOLCHAIN_URL="https://musl.cc/armv7l-linux-musleabihf-cross.tgz"
-              ;;
-            arm-linux-musleabihf)
-              TOOLCHAIN_URL="https://musl.cc/arm-linux-musleabihf-cross.tgz"
-              ;;
-            powerpc64le-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/powerpc64le-linux-musl-cross.tgz"
-              ;;
-            riscv64-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/riscv64-linux-musl-cross.tgz"
-              ;;
-            s390x-linux-musl)
-              TOOLCHAIN_URL="https://musl.cc/s390x-linux-musl-cross.tgz"
-              ;;
-            *)
-              echo "Unsupported architecture: $MUSL_TARGET"
-              exit 1
-              ;;
-          esac
-          
-          echo "Downloading toolchain from $TOOLCHAIN_URL"
-          wget -q "$TOOLCHAIN_URL" -O toolchain.tgz
-          tar -xzf toolchain.tgz
-          
-          # Move to /opt and add to PATH
-          sudo mv ${MUSL_TARGET}-cross /opt/
-          echo "/opt/${MUSL_TARGET}-cross/bin" >> $GITHUB_PATH
+          sudo apt-get install -y upx-ucl
 
-      - name: Build static binary for ${{ matrix.arch }}
+      - name: Cross-compile static binary for ${{ matrix.arch }}
         shell: bash
         run: |
-          export PATH="/opt/${MUSL_TARGET}-cross/bin:$PATH"
-          export CC="${MUSL_TARGET}-gcc"
-          export AR="${MUSL_TARGET}-ar"
-          export RANLIB="${MUSL_TARGET}-ranlib"
-          export STRIP="${MUSL_TARGET}-strip"
+          export PATH="/opt/zig:$PATH"
           
-          # Verify toolchain is available
-          which ${MUSL_TARGET}-gcc
-          ${MUSL_TARGET}-gcc --version
+          # Zig can be used as a drop-in replacement for gcc/clang with cross-compilation
+          export CC="zig cc -target $ZIG_TARGET"
+          export AR="zig ar"
+          export RANLIB="zig ranlib"
+          
+          # Verify zig is available
+          zig version
 
           # Create output directories
           mkdir -p output output2 output3
@@ -148,11 +107,11 @@ jobs:
           # Build fakepid library (static)
           cd src/fakepid
           make clean
-          make LDFLAGS="-static"
+          CC="zig cc -target $ZIG_TARGET" make
           cd ../..
 
           # Build ruri (static)
-          ${CC} build.c -o build-ruri
+          zig cc -target $ZIG_TARGET build.c -o build-ruri
           ./build-ruri -s -f
 
           cp ruri output/ruri
@@ -165,13 +124,12 @@ jobs:
           cp ruri output3/ruri
           cp LICENSE output3/LICENSE
           
-          # Verify binaries are static
+          # Verify binaries
           file output/ruri
-          ldd output/ruri 2>&1 | grep -q "not a dynamic executable" || echo "Warning: Binary may not be fully static"
-
+          
           # UPX compression for supported architectures
           case "$ARCHITECTURE" in
-            x86_64|x86|aarch64|armhf|armv7|ppc64le)
+            x86_64|x86|aarch64|ppc64le)
               upx --best output2/ruri || true
               upx --best output3/ruri || true
               ;;
@@ -180,7 +138,7 @@ jobs:
           # Create tarballs
           (cd output && tar -cf ../$ARCHITECTURE.tar .)
           (cd output3 && tar -cf ../$ARCHITECTURE-core.tar .)
-          if [[ "$ARCHITECTURE" =~ ^(x86_64|x86|aarch64|armhf|armv7|ppc64le)$ ]]; then
+          if [[ "$ARCHITECTURE" =~ ^(x86_64|x86|aarch64|ppc64le)$ ]]; then
             (cd output2 && tar -cf ../$ARCHITECTURE-upx.tar .)
           fi
 
