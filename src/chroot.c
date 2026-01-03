@@ -223,8 +223,19 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 		// Check both redroid_mode flag and existence of /system/bin
 		struct stat android_check;
 		if (container->redroid_mode || (stat("/system/bin", &android_check) == 0 && S_ISDIR(android_check.st_mode))) {
-			mkdir("/dev/__properties__", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IXOTH);
-			mount("tmpfs", "/dev/__properties__", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "mode=0711");
+			// Use mode 0711: owner rwx, group x, others x
+			if (mkdir("/dev/__properties__", S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IXOTH) == -1 && errno != EEXIST) {
+				// Directory creation failed and it wasn't because it already exists
+				if (!container->no_warnings) {
+					ruri_warning("{yellow}Warning: Failed to create /dev/__properties__: %s\n", strerror(errno));
+				}
+			}
+			// Try to mount even if mkdir failed (directory might already exist)
+			if (mount("tmpfs", "/dev/__properties__", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "mode=0711") == -1) {
+				if (!container->no_warnings) {
+					ruri_warning("{yellow}Warning: Failed to mount /dev/__properties__: %s\n", strerror(errno));
+				}
+			}
 		}
 		if (!container->unmask_dirs) {
 			// Mask some directories/files that we don't want the container modify it.
