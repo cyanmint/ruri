@@ -812,7 +812,7 @@ static void setup_fake_proc(pid_t init_pid)
 	 * 
 	 * Approach:
 	 * 1. Set RURI_FAKE_INIT_PID environment variable
-	 * 2. Set LD_PRELOAD to load libfakepid.so
+	 * 2. Set LD_PRELOAD to load libfakepid.so (only if it exists and is accessible)
 	 * 3. Create /proc/1 as a symlink to /proc/<real_init_pid>
 	 */
 	
@@ -823,6 +823,7 @@ static void setup_fake_proc(pid_t init_pid)
 	
 	// Set LD_PRELOAD - the library should be at /lib/libfakepid.so in container
 	// This will be copied there during container setup
+	// Only set if the library exists and is a regular file
 	const char *preload_paths[] = {
 		"/lib/libfakepid.so",
 		"/usr/lib/libfakepid.so",
@@ -830,11 +831,22 @@ static void setup_fake_proc(pid_t init_pid)
 		NULL
 	};
 	
+	bool preload_set = false;
 	for (int i = 0; preload_paths[i] != NULL; i++) {
-		if (access(preload_paths[i], F_OK) == 0) {
-			setenv("LD_PRELOAD", preload_paths[i], 1);
-			break;
+		struct stat st;
+		if (stat(preload_paths[i], &st) == 0 && S_ISREG(st.st_mode)) {
+			// Verify the file is readable and executable
+			if (access(preload_paths[i], R_OK | X_OK) == 0) {
+				setenv("LD_PRELOAD", preload_paths[i], 1);
+				preload_set = true;
+				ruri_log("{base}Set LD_PRELOAD to %s\n", preload_paths[i]);
+				break;
+			}
 		}
+	}
+	
+	if (!preload_set) {
+		ruri_log("{base}Warning: libfakepid.so not found, fake PID may not work for all programs\n");
 	}
 	
 	// Create /proc/1 as a symlink to the real init process
