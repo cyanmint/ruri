@@ -89,6 +89,7 @@ void ruri_init_config(struct RURI_CONTAINER *_Nonnull container)
 	container->enable_tty_signals = false;
 	container->skip_setgroups = false;
 	container->fake_proc_pid1_ns = false;
+	container->redroid_mode = false;
 }
 static int pmcrts(const char *s1, const char *s2)
 {
@@ -396,6 +397,10 @@ char *ruri_container_info_to_k2v(const struct RURI_CONTAINER *_Nonnull container
 	// fake_proc_pid1_ns.
 	ret = k2v_add_comment(ret, "Fake /proc and pid namespace to make init think it's pid1.");
 	ret = k2v_add_config(bool, ret, "fake_proc_pid1_ns", container->fake_proc_pid1_ns);
+	ret = k2v_add_newline(ret);
+	// redroid_mode.
+	ret = k2v_add_comment(ret, "Enable redroid/Android container mode.");
+	ret = k2v_add_config(bool, ret, "redroid_mode", container->redroid_mode);
 	return ret;
 }
 void ruri_read_config(struct RURI_CONTAINER *_Nonnull container, const char *_Nonnull path)
@@ -808,6 +813,12 @@ void ruri_correct_config(const char *_Nonnull path)
 		container.fake_proc_pid1_ns = false;
 	} else {
 		container.fake_proc_pid1_ns = k2v_get_key(bool, "fake_proc_pid1_ns", buf);
+	}
+	if (!have_key("redroid_mode", buf)) {
+		ruri_warning("{green}No key redroid_mode found, set to false\n{clear}");
+		container.redroid_mode = false;
+	} else {
+		container.redroid_mode = k2v_get_key(bool, "redroid_mode", buf);
 	}
 	free(buf);
 	unlink(path);

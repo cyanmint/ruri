@@ -212,6 +212,8 @@ struct RURI_CONTAINER {
 	bool skip_setgroups;
 	// Fake /proc and pid namespace to make init think it's pid1
 	bool fake_proc_pid1_ns;
+	// Redroid/Android container mode
+	bool redroid_mode;
 };
 // For ruri_get_magic().
 #define ruri_magicof(x) (x##_magic)

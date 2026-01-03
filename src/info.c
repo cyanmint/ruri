@@ -148,6 +148,7 @@ void ruri_show_helps(void)
 	cprintf("{base}  -z, --enable-tty-signals ....................: Enable TTY signals in the container (*15)\n");
 	cprintf("{base}  -g, --skip-setgroups ........................: Skip setgroups() call\n");
 	cprintf("{base}  -1, --fake-proc-pid1-namespace ..............: Fake /proc and pid namespace to make init think it's pid1 (*16)\n");
+	cprintf("{base}  -Y, --redroid ...................................: Enable redroid/Android container mode (*17)\n");
 	cprintf("\n");
 	cprintf("{base}Note:\n");
 	cprintf("{base}(*1)  : Will not work for unshare containers without PID ns support\n");
@@ -167,6 +168,7 @@ void ruri_show_helps(void)
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
 	cprintf("{base}(*16) : This option uses LD_PRELOAD to fake getpid() and creates fake /proc entries WITHOUT using PID namespaces. Works with systemd. Use with -S to skip host /proc mounting\n");
+	cprintf("{base}(*17) : Enables Android/redroid container support. Uses /system/bin/sh as default shell and sets up Android-specific environment\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");
