@@ -18,25 +18,48 @@
  * to make processes think they are running with different PIDs.
  * This is used to fool init systems like systemd into thinking they
  * are PID 1 even when they're not.
+ * 
+ * PORTABILITY: Works with glibc, musl, and Android bionic libc
+ * Uses syscalls directly instead of dlsym to avoid libdl dependency
  */
 
 #define _GNU_SOURCE
-#include <dlfcn.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
 #include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 // Real PID of the container init process
 static pid_t real_init_pid = 0;
 static int initialized = 0;
 
-// Function pointers to real syscalls
-static pid_t (*real_getpid)(void) = NULL;
-static pid_t (*real_getppid)(void) = NULL;
+// Simple getenv implementation that doesn't rely on libc
+static const char *simple_getenv(const char *name)
+{
+	extern char **environ;
+	if (!name || !environ) {
+		return NULL;
+	}
+	
+	size_t len = 0;
+	while (name[len]) len++;
+	
+	for (char **env = environ; *env; env++) {
+		const char *e = *env;
+		size_t i;
+		
+		// Check if this env var matches our name
+		for (i = 0; i < len && e[i] && name[i] && e[i] == name[i]; i++);
+		
+		// If we matched the full name and next char is '='
+		if (i == len && e[i] == '=') {
+			return &e[i + 1];
+		}
+	}
+	
+	return NULL;
+}
 
-// Simple atoi implementation to avoid libc compatibility issues
+// Simple atoi implementation
 static int simple_atoi(const char *str)
 {
 	int result = 0;
@@ -64,6 +87,18 @@ static int simple_atoi(const char *str)
 	return sign * result;
 }
 
+// Get real PID using syscall directly
+static inline pid_t real_getpid(void)
+{
+	return (pid_t)syscall(SYS_getpid);
+}
+
+// Get real PPID using syscall directly
+static inline pid_t real_getppid(void)
+{
+	return (pid_t)syscall(SYS_getppid);
+}
+
 // Initialize the library
 static void init_fakepid(void) __attribute__((constructor));
 
@@ -73,12 +108,8 @@ static void init_fakepid(void)
 		return;
 	}
 	
-	// Get the real syscall functions
-	real_getpid = dlsym(RTLD_NEXT, "getpid");
-	real_getppid = dlsym(RTLD_NEXT, "getppid");
-	
 	// Get the real init PID from environment variable
-	const char *init_pid_str = getenv("RURI_FAKE_INIT_PID");
+	const char *init_pid_str = simple_getenv("RURI_FAKE_INIT_PID");
 	if (init_pid_str) {
 		real_init_pid = simple_atoi(init_pid_str);
 	} else {
