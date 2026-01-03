@@ -93,6 +93,8 @@ jobs:
         shell: bash
         run: |
           cd build
+          # Copy the checked-out repository code into the Alpine container
+          cp -r ../ "$ARCHITECTURE/ruri"
           cp build.sh "$ARCHITECTURE/build.sh"
           sudo chmod +x ../ruri
           sudo chmod +x "$ARCHITECTURE/build.sh"
