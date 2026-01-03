@@ -173,3 +173,75 @@ pid_t getppid(void)
 	// If parent is before init, return 1 (init)
 	return 1;
 }
+
+// Fake gettid() - similar to getpid but for thread IDs
+pid_t gettid(void)
+{
+	// For simplicity, return the same as getpid()
+	// In a real implementation, we'd track thread IDs separately
+	return getpid();
+}
+
+// Helper function to convert fake PID to real PID
+static pid_t fake_to_real_pid(pid_t fake_pid)
+{
+	if (!initialized) {
+		init_fakepid();
+	}
+	
+	// PID 1 maps to real_init_pid
+	if (fake_pid == 1) {
+		return real_init_pid;
+	}
+	
+	// Other PIDs map back
+	if (fake_pid > 1) {
+		return fake_pid + real_init_pid - 1;
+	}
+	
+	// Invalid or special PIDs
+	return fake_pid;
+}
+
+// Intercept kill() to translate PIDs
+int kill(pid_t pid, int sig)
+{
+	if (!initialized) {
+		init_fakepid();
+	}
+	
+	// Translate fake PID to real PID if needed
+	pid_t real_pid = pid;
+	if (pid > 0) {
+		real_pid = fake_to_real_pid(pid);
+	}
+	
+	return (int)syscall(SYS_kill, real_pid, sig);
+}
+
+// Intercept tkill() to translate TIDs
+int tkill(pid_t tid, int sig)
+{
+	if (!initialized) {
+		init_fakepid();
+	}
+	
+	// Translate fake TID to real TID
+	pid_t real_tid = fake_to_real_pid(tid);
+	
+	return (int)syscall(SYS_tkill, real_tid, sig);
+}
+
+// Intercept tgkill() to translate TGIDs and TIDs
+int tgkill(pid_t tgid, pid_t tid, int sig)
+{
+	if (!initialized) {
+		init_fakepid();
+	}
+	
+	// Translate fake PIDs to real PIDs
+	pid_t real_tgid = fake_to_real_pid(tgid);
+	pid_t real_tid = fake_to_real_pid(tid);
+	
+	return (int)syscall(SYS_tgkill, real_tgid, real_tid, sig);
+}
