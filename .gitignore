@@ -3,6 +3,7 @@ ruri
 ruri-amd64.zip
 ruri-arm64.zip
 src/fakepid/libfakepid.so
+src/fakepid/libfakepid_embedded.h
 *.so
 # Editor configuration.
 .vscode/

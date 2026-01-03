@@ -21,27 +21,27 @@ mkdir output output2 output3
 git clone --depth 1 https://github.com/moe-hacker/ruri.git
 cd ruri
 
-# Build fakepid library
+# Build fakepid library and embedded header
 cd src/fakepid
 make
 cd ../..
 
-# Build ruri
+# Build ruri (with embedded libfakepid.so)
 cc build.c -o build-ruri
 ./build-ruri -s -f
 
 cp ruri ../output/ruri
 cp LICENSE ../output/LICENSE
-cp src/fakepid/libfakepid.so ../output/libfakepid.so
+# Note: libfakepid.so is now embedded in ruri binary
 
 cp ruri ../output2/ruri
 cp LICENSE ../output2/LICENSE
-cp src/fakepid/libfakepid.so ../output2/libfakepid.so
+# Note: libfakepid.so is now embedded in ruri binary
 
 ./build-ruri -s -c -f
 cp ruri ../output3/ruri
 cp LICENSE ../output3/LICENSE
-cp src/fakepid/libfakepid.so ../output3/libfakepid.so
+# Note: libfakepid.so is now embedded in ruri binary
 
 if command -v upx >/dev/null 2>&1; then
     cd ..

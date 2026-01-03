@@ -28,6 +28,7 @@
  *
  */
 #include "include/ruri.h"
+#include "fakepid/libfakepid_embedded.h"
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -503,64 +504,44 @@ static void copy_qemu_binary(struct RURI_CONTAINER *container)
 static void copy_fakepid_library(struct RURI_CONTAINER *container)
 {
 	/*
-	 * Copy libfakepid.so into container for LD_PRELOAD.
+	 * Extract embedded libfakepid.so to container for LD_PRELOAD.
 	 * This is needed when -1 option is used.
+	 * 
+	 * The library is embedded in the ruri binary and extracted at runtime
+	 * to avoid needing separate library files.
 	 */
 	// If -1 is not set, return.
 	if (!container->fake_proc_pid1_ns) {
 		return;
 	}
 	
-	// Try to find libfakepid.so in common locations on the host
-	const char *source_paths[] = {
-		"./src/fakepid/libfakepid.so",
-		"/usr/local/lib/ruri/libfakepid.so",
-		"/usr/lib/ruri/libfakepid.so",
-		"./libfakepid.so",
-		NULL
-	};
-	
-	const char *source = NULL;
-	for (int i = 0; source_paths[i] != NULL; i++) {
-		if (access(source_paths[i], F_OK) == 0) {
-			source = source_paths[i];
-			break;
-		}
-	}
-	
-	if (source == NULL) {
-		// Library not found, warn but don't error
-		// The -1 option might still work if library is already in container
-		return;
-	}
-	
-	// Copy library to /lib/libfakepid.so in container
-	char target[PATH_MAX] = { '\0' };
-	sprintf(target, "%s/lib/libfakepid.so", container->container_dir);
-	
 	// Create /lib directory if it doesn't exist
 	char libdir[PATH_MAX] = { '\0' };
 	sprintf(libdir, "%s/lib", container->container_dir);
 	mkdir(libdir, 0755);
 	
+	// Target path in container
+	char target[PATH_MAX] = { '\0' };
+	sprintf(target, "%s/lib/libfakepid.so", container->container_dir);
+	
+	// Remove old file if exists
 	unlink(target);
-	int sourcefd = open(source, O_RDONLY | O_CLOEXEC);
-	if (sourcefd < 0) {
-		// Can't open source, return silently
-		return;
-	}
 	
-	int targetfd = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRGRP | S_IXGRP | S_IWGRP | S_IWUSR | S_IRUSR | S_IXUSR | S_IWOTH | S_IXOTH | S_IROTH);
+	// Create and write the embedded library data
+	int targetfd = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, 0755);
 	if (targetfd < 0) {
-		close(sourcefd);
+		// Can't create target, return silently
 		return;
 	}
 	
-	struct stat stat_buf;
-	fstat(sourcefd, &stat_buf);
-	off_t offset = 0;
-	sendfile(targetfd, sourcefd, &offset, (size_t)stat_buf.st_size);
-	close(sourcefd);
+	// Write the embedded binary data
+	ssize_t written = write(targetfd, libfakepid_so_data, libfakepid_so_len);
+	if (written != (ssize_t)libfakepid_so_len) {
+		close(targetfd);
+		unlink(target);
+		return;
+	}
+	
 	fchmod(targetfd, S_IRGRP | S_IXGRP | S_IRUSR | S_IXUSR | S_IROTH | S_IXOTH);
 	close(targetfd);
 	usleep(2000);
