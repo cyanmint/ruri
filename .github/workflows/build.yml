@@ -94,7 +94,8 @@ jobs:
         run: |
           cd build
           # Copy the checked-out repository code into the Alpine container
-          cp -r ../ "$ARCHITECTURE/ruri"
+          # Exclude .git and build directories to avoid recursion
+          rsync -a --exclude='.git' --exclude='build' ../ "$ARCHITECTURE/ruri/"
           cp build.sh "$ARCHITECTURE/build.sh"
           sudo chmod +x ../ruri
           sudo chmod +x "$ARCHITECTURE/build.sh"
