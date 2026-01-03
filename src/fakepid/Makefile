@@ -1,6 +1,6 @@
 # Makefile for fakepid LD_PRELOAD library
 
-CC = gcc
+CC ?= gcc
 CFLAGS = -fPIC -Wall -O2
 LDFLAGS = -shared -ldl
 

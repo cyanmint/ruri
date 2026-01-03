@@ -26,7 +26,7 @@ cd ruri
 
 # Build fakepid library and embedded header
 cd src/fakepid
-make
+CC=clang make
 cd ../..
 
 # Build ruri (with embedded libfakepid.so)

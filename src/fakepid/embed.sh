@@ -29,8 +29,8 @@ cat > libfakepid_embedded.h << 'EOF'
 
 EOF
 
-# Get file size
-SIZE=$(stat -c%s libfakepid.so)
+# Get file size (portable way)
+SIZE=$(wc -c < libfakepid.so | tr -d ' ')
 
 echo "static const size_t libfakepid_so_len = ${SIZE};" >> libfakepid_embedded.h
 echo "static const unsigned char libfakepid_so_data[] = {" >> libfakepid_embedded.h
