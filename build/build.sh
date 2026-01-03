@@ -20,18 +20,28 @@ mkdir output output2 output3
 
 git clone --depth 1 https://github.com/moe-hacker/ruri.git
 cd ruri
+
+# Build fakepid library
+cd src/fakepid
+make
+cd ../..
+
+# Build ruri
 cc build.c -o build-ruri
 ./build-ruri -s -f
 
 cp ruri ../output/ruri
 cp LICENSE ../output/LICENSE
+cp src/fakepid/libfakepid.so ../output/libfakepid.so
 
 cp ruri ../output2/ruri
 cp LICENSE ../output2/LICENSE
+cp src/fakepid/libfakepid.so ../output2/libfakepid.so
 
 ./build-ruri -s -c -f
 cp ruri ../output3/ruri
 cp LICENSE ../output3/LICENSE
+cp src/fakepid/libfakepid.so ../output3/libfakepid.so
 
 if command -v upx >/dev/null 2>&1; then
     cd ..

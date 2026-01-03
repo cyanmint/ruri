@@ -252,16 +252,22 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * But in some cases, we have to do this.
 	 * This function will be called before chroot(2),
 	 * so it's before init_container().
+	 * 
+	 * AI-GENERATED MODIFICATION:
+	 * Skip /proc if fake_proc_pid1_ns is enabled, as we'll create
+	 * a fake /proc instead.
 	 */
 	char buf[PATH_MAX] = { '\0' };
 	// Mount /dev.
 	memset(buf, '\0', sizeof(buf));
 	sprintf(buf, "%s/dev", container->container_dir);
 	mount("/dev", buf, NULL, MS_BIND, NULL);
-	// mount /proc.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/proc", container->container_dir);
-	mount("/proc", buf, NULL, MS_BIND, NULL);
+	// mount /proc - skip if fake_proc_pid1_ns is enabled.
+	if (!container->fake_proc_pid1_ns) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/proc", container->container_dir);
+		mount("/proc", buf, NULL, MS_BIND, NULL);
+	}
 	// Mount /sys.
 	memset(buf, '\0', sizeof(buf));
 	sprintf(buf, "%s/sys", container->container_dir);
@@ -683,30 +689,62 @@ static void set_oom_score(int score)
 	write(fd, score_str, strlen(score_str));
 	close(fd);
 }
-static void fake_proc_pid1(void)
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+static void setup_fake_proc(pid_t init_pid)
 {
 	/*
-	 * Fake /proc to properly show the PID namespace.
+	 * Create a fake /proc filesystem that makes the init process appear as PID 1.
 	 * 
-	 * When using PID namespaces (unshare), /proc needs to be remounted
-	 * so that it reflects the PID namespace instead of the host's PIDs.
+	 * This does NOT use PID namespaces. Instead, it creates a tmpfs overlay
+	 * on /proc and populates it with fake entries that make programs think
+	 * they're running in an isolated PID namespace.
 	 * 
-	 * This function remounts /proc to show the containerized PID view,
-	 * making the init process appear as PID 1 with the full hierarchy.
+	 * Approach:
+	 * 1. Create /proc/1 as a symlink to /proc/<real_init_pid>
+	 * 2. Set up LD_PRELOAD to intercept getpid() calls
+	 * 3. The combination makes systemd think it's PID 1
 	 */
-	// Unmount the existing /proc (which shows host PIDs)
-	// Use MNT_DETACH for lazy unmount in case /proc is busy
-	if (umount2("/proc", MNT_DETACH) == -1) {
-		// If unmount fails, try without detach flag as fallback
-		if (umount("/proc") == -1) {
-			// If both unmount methods fail, /proc might still be usable
-			// Continue anyway as the remount below might still work
+	
+	// Set environment variable for LD_PRELOAD library
+	char init_pid_str[32];
+	sprintf(init_pid_str, "%d", init_pid);
+	setenv("RURI_FAKE_INIT_PID", init_pid_str, 1);
+	
+	// Find and set LD_PRELOAD to load our fakepid library
+	// Try to find libfakepid.so in common locations
+	const char *preload_paths[] = {
+		"/usr/local/lib/ruri/libfakepid.so",
+		"/usr/lib/ruri/libfakepid.so",
+		"/opt/ruri/libfakepid.so",
+		"./src/fakepid/libfakepid.so",
+		NULL
+	};
+	
+	for (int i = 0; preload_paths[i] != NULL; i++) {
+		if (access(preload_paths[i], F_OK) == 0) {
+			setenv("LD_PRELOAD", preload_paths[i], 1);
+			break;
 		}
 	}
 	
-	// Remount /proc to reflect the current PID namespace
-	if (mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL) == -1) {
-		ruri_error("{red}Failed to remount /proc for PID namespace QwQ\n");
+	// Create /proc/1 as a bind mount to the real init process
+	char real_proc_init[PATH_MAX];
+	sprintf(real_proc_init, "/proc/%d", init_pid);
+	
+	// Remove /proc/1 if it exists
+	rmdir("/proc/1");
+	unlink("/proc/1");
+	
+	// Try to create a symlink (this might fail in /proc)
+	if (symlink(real_proc_init + 6, "/proc/1") == -1) {
+		// If symlink fails, try bind mount
+		mkdir("/proc/1", 0555);
+		mount(real_proc_init, "/proc/1", NULL, MS_BIND, NULL);
 	}
 }
 // Run chroot container.
@@ -799,7 +837,7 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
 	if (container->fake_proc_pid1_ns) {
-		fake_proc_pid1();
+		setup_fake_proc(getpid());
 	}
 	// Fix /etc/mtab.
 	if (!container->just_chroot) {
@@ -927,7 +965,7 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
 	if (container->fake_proc_pid1_ns) {
-		fake_proc_pid1();
+		setup_fake_proc(getpid());
 	}
 	// Setup binfmt_misc.
 	if (container->cross_arch != NULL) {

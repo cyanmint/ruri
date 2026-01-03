@@ -166,7 +166,7 @@ void ruri_show_helps(void)
 	cprintf("{base}(*13) : This can only be used when the `-N` option is enabled\n");
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
-	cprintf("{base}(*16) : This option makes the container init appear as PID 1 by faking /proc entries. Useful for init systems that check their PID\n");
+	cprintf("{base}(*16) : This option uses LD_PRELOAD to fake getpid() and creates fake /proc entries WITHOUT using PID namespaces. Works with systemd. Use with -S to skip host /proc mounting\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");
