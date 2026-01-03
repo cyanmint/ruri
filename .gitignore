@@ -2,6 +2,8 @@
 ruri
 ruri-amd64.zip
 ruri-arm64.zip
+src/fakepid/libfakepid.so
+*.so
 # Editor configuration.
 .vscode/
 # Gdb log
