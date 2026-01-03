@@ -697,8 +697,11 @@ static void fake_proc_pid1(void)
 	// Unmount the existing /proc (which shows host PIDs)
 	// Use MNT_DETACH for lazy unmount in case /proc is busy
 	if (umount2("/proc", MNT_DETACH) == -1) {
-		// If unmount fails, try without detach flag
-		umount("/proc");
+		// If unmount fails, try without detach flag as fallback
+		if (umount("/proc") == -1) {
+			// If both unmount methods fail, /proc might still be usable
+			// Continue anyway as the remount below might still work
+		}
 	}
 	
 	// Remount /proc to reflect the current PID namespace
