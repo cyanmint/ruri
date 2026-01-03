@@ -686,37 +686,19 @@ static void set_oom_score(int score)
 static void fake_proc_pid1(void)
 {
 	/*
-	 * Fake /proc to make the init process think it's PID 1.
-	 * This function creates bind mounts from the actual process /proc entries
-	 * to /proc/1, making the container init appear as PID 1.
+	 * Fake /proc to properly show the PID namespace.
 	 * 
-	 * The approach:
-	 * 1. Get current PID
-	 * 2. Create /proc/1 directory if needed
-	 * 3. Bind mount /proc/self to /proc/1
-	 * 4. This makes any process reading /proc/1 see itself
+	 * When using PID namespaces (unshare), /proc needs to be remounted
+	 * so that it reflects the PID namespace instead of the host's PIDs.
+	 * 
+	 * This function remounts /proc to show the containerized PID view,
+	 * making the init process appear as PID 1 with the full hierarchy.
 	 */
-	pid_t actual_pid = getpid();
+	// Unmount the existing /proc (which shows host PIDs)
+	umount2("/proc", MNT_DETACH);
 	
-	// Create /proc/1 if it doesn't exist
-	mkdir("/proc/1", S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
-	
-	// Bind mount /proc/self to /proc/1
-	// This makes /proc/1 always refer to the current process
-	if (mount("/proc/self", "/proc/1", NULL, MS_BIND, NULL) == -1) {
-		// If bind mount fails, try alternative approach
-		// Create symlink from /proc/1 to actual pid
-		char actual_proc[PATH_MAX];
-		sprintf(actual_proc, "/proc/%d", actual_pid);
-		
-		// Remove /proc/1 if it exists
-		rmdir("/proc/1");
-		
-		// Create symlink
-		if (symlink(actual_proc, "/proc/1") == -1) {
-			// Silently fail - not critical
-		}
-	}
+	// Remount /proc to reflect the current PID namespace
+	mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
 }
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
