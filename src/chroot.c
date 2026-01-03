@@ -494,6 +494,77 @@ static void copy_qemu_binary(struct RURI_CONTAINER *container)
 		usleep(2000);
 	}
 }
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+static void copy_fakepid_library(struct RURI_CONTAINER *container)
+{
+	/*
+	 * Copy libfakepid.so into container for LD_PRELOAD.
+	 * This is needed when -1 option is used.
+	 */
+	// If -1 is not set, return.
+	if (!container->fake_proc_pid1_ns) {
+		return;
+	}
+	
+	// Try to find libfakepid.so in common locations on the host
+	const char *source_paths[] = {
+		"./src/fakepid/libfakepid.so",
+		"/usr/local/lib/ruri/libfakepid.so",
+		"/usr/lib/ruri/libfakepid.so",
+		"./libfakepid.so",
+		NULL
+	};
+	
+	const char *source = NULL;
+	for (int i = 0; source_paths[i] != NULL; i++) {
+		if (access(source_paths[i], F_OK) == 0) {
+			source = source_paths[i];
+			break;
+		}
+	}
+	
+	if (source == NULL) {
+		// Library not found, warn but don't error
+		// The -1 option might still work if library is already in container
+		return;
+	}
+	
+	// Copy library to /lib/libfakepid.so in container
+	char target[PATH_MAX] = { '\0' };
+	sprintf(target, "%s/lib/libfakepid.so", container->container_dir);
+	
+	// Create /lib directory if it doesn't exist
+	char libdir[PATH_MAX] = { '\0' };
+	sprintf(libdir, "%s/lib", container->container_dir);
+	mkdir(libdir, 0755);
+	
+	unlink(target);
+	int sourcefd = open(source, O_RDONLY | O_CLOEXEC);
+	if (sourcefd < 0) {
+		// Can't open source, return silently
+		return;
+	}
+	
+	int targetfd = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRGRP | S_IXGRP | S_IWGRP | S_IWUSR | S_IRUSR | S_IXUSR | S_IWOTH | S_IXOTH | S_IROTH);
+	if (targetfd < 0) {
+		close(sourcefd);
+		return;
+	}
+	
+	struct stat stat_buf;
+	fstat(sourcefd, &stat_buf);
+	off_t offset = 0;
+	sendfile(targetfd, sourcefd, &offset, (size_t)stat_buf.st_size);
+	close(sourcefd);
+	fchmod(targetfd, S_IRGRP | S_IXGRP | S_IRUSR | S_IXUSR | S_IROTH | S_IXOTH);
+	close(targetfd);
+	usleep(2000);
+}
 static bool pivot_root_succeed(const char *_Nonnull container_dir)
 {
 	/*
@@ -700,14 +771,13 @@ static void setup_fake_proc(pid_t init_pid)
 	/*
 	 * Create a fake /proc filesystem that makes the init process appear as PID 1.
 	 * 
-	 * This does NOT use PID namespaces. Instead, it creates a tmpfs overlay
-	 * on /proc and populates it with fake entries that make programs think
-	 * they're running in an isolated PID namespace.
+	 * This does NOT use PID namespaces. Instead, it uses LD_PRELOAD to intercept
+	 * getpid() calls and creates /proc/1 entries to fool programs.
 	 * 
 	 * Approach:
-	 * 1. Create /proc/1 as a symlink to /proc/<real_init_pid>
-	 * 2. Set up LD_PRELOAD to intercept getpid() calls
-	 * 3. The combination makes systemd think it's PID 1
+	 * 1. Set RURI_FAKE_INIT_PID environment variable
+	 * 2. Set LD_PRELOAD to load libfakepid.so
+	 * 3. Create /proc/1 as a symlink to /proc/<real_init_pid>
 	 */
 	
 	// Set environment variable for LD_PRELOAD library
@@ -715,13 +785,12 @@ static void setup_fake_proc(pid_t init_pid)
 	sprintf(init_pid_str, "%d", init_pid);
 	setenv("RURI_FAKE_INIT_PID", init_pid_str, 1);
 	
-	// Find and set LD_PRELOAD to load our fakepid library
-	// Try to find libfakepid.so in common locations
+	// Set LD_PRELOAD - the library should be at /lib/libfakepid.so in container
+	// This will be copied there during container setup
 	const char *preload_paths[] = {
-		"/usr/local/lib/ruri/libfakepid.so",
-		"/usr/lib/ruri/libfakepid.so",
-		"/opt/ruri/libfakepid.so",
-		"./src/fakepid/libfakepid.so",
+		"/lib/libfakepid.so",
+		"/usr/lib/libfakepid.so",
+		"/usr/local/lib/libfakepid.so",
 		NULL
 	};
 	
@@ -732,19 +801,22 @@ static void setup_fake_proc(pid_t init_pid)
 		}
 	}
 	
-	// Create /proc/1 as a bind mount to the real init process
+	// Create /proc/1 as a symlink to the real init process
 	char real_proc_init[PATH_MAX];
-	sprintf(real_proc_init, "/proc/%d", init_pid);
+	sprintf(real_proc_init, "%d", init_pid);
 	
 	// Remove /proc/1 if it exists
 	rmdir("/proc/1");
 	unlink("/proc/1");
 	
-	// Try to create a symlink (this might fail in /proc)
-	if (symlink(real_proc_init + 6, "/proc/1") == -1) {
+	// Try to create a symlink to the real PID directory
+	// This makes /proc/1 point to /proc/<real_init_pid>
+	if (symlink(real_proc_init, "/proc/1") == -1) {
 		// If symlink fails, try bind mount
+		char full_path[PATH_MAX];
+		sprintf(full_path, "/proc/%d", init_pid);
 		mkdir("/proc/1", 0555);
-		mount(real_proc_init, "/proc/1", NULL, MS_BIND, NULL);
+		mount(full_path, "/proc/1", NULL, MS_BIND, NULL);
 	}
 }
 // Run chroot container.
@@ -777,6 +849,8 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 		mount_mountpoints(container);
 		// Copy qemu binary into container.
 		copy_qemu_binary(container);
+		// Copy fakepid library into container.
+		copy_fakepid_library(container);
 		// Store container info.
 		if (!container->enable_unshare && !container->just_chroot && container->use_rurienv) {
 			ruri_store_info(container);
@@ -920,6 +994,8 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	mount_mountpoints(container);
 	// Copy qemu binary into container.
 	copy_qemu_binary(container);
+	// Copy fakepid library into container.
+	copy_fakepid_library(container);
 	// If `-R` option is set, make / read-only.
 	if (container->ro_root) {
 		mount(container->container_dir, container->container_dir, NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL);

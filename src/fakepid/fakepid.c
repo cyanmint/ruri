@@ -36,6 +36,34 @@ static int initialized = 0;
 static pid_t (*real_getpid)(void) = NULL;
 static pid_t (*real_getppid)(void) = NULL;
 
+// Simple atoi implementation to avoid libc compatibility issues
+static int simple_atoi(const char *str)
+{
+	int result = 0;
+	int sign = 1;
+	
+	if (!str) return 0;
+	
+	// Skip whitespace
+	while (*str == ' ' || *str == '\t') str++;
+	
+	// Handle sign
+	if (*str == '-') {
+		sign = -1;
+		str++;
+	} else if (*str == '+') {
+		str++;
+	}
+	
+	// Convert digits
+	while (*str >= '0' && *str <= '9') {
+		result = result * 10 + (*str - '0');
+		str++;
+	}
+	
+	return sign * result;
+}
+
 // Initialize the library
 static void init_fakepid(void) __attribute__((constructor));
 
@@ -52,7 +80,7 @@ static void init_fakepid(void)
 	// Get the real init PID from environment variable
 	const char *init_pid_str = getenv("RURI_FAKE_INIT_PID");
 	if (init_pid_str) {
-		real_init_pid = atoi(init_pid_str);
+		real_init_pid = simple_atoi(init_pid_str);
 	} else {
 		// If not set, use current PID as init
 		real_init_pid = real_getpid();
