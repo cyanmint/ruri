@@ -219,6 +219,13 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 		symlink("/proc/self/fd/1", "/dev/stdout");
 		symlink("/proc/self/fd/2", "/dev/stderr");
 		symlink("/dev/null", "/dev/tty0");
+		// Create Android property directory for Android/redroid containers
+		// Check both redroid_mode flag and existence of /system/bin
+		struct stat android_check;
+		if (container->redroid_mode || (stat("/system/bin", &android_check) == 0 && S_ISDIR(android_check.st_mode))) {
+			mkdir("/dev/__properties__", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IXOTH);
+			mount("tmpfs", "/dev/__properties__", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, "mode=0711");
+		}
 		if (!container->unmask_dirs) {
 			// Mask some directories/files that we don't want the container modify it.
 			mount("tmpfs", "/proc/asound", "tmpfs", MS_RDONLY, NULL);
