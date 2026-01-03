@@ -695,10 +695,16 @@ static void fake_proc_pid1(void)
 	 * making the init process appear as PID 1 with the full hierarchy.
 	 */
 	// Unmount the existing /proc (which shows host PIDs)
-	umount2("/proc", MNT_DETACH);
+	// Use MNT_DETACH for lazy unmount in case /proc is busy
+	if (umount2("/proc", MNT_DETACH) == -1) {
+		// If unmount fails, try without detach flag
+		umount("/proc");
+	}
 	
 	// Remount /proc to reflect the current PID namespace
-	mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
+	if (mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL) == -1) {
+		ruri_error("{red}Failed to remount /proc for PID namespace QwQ\n");
+	}
 }
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
