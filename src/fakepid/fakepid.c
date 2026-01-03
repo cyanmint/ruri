@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <signal.h>
 
 // Real PID of the container init process
 static pid_t real_init_pid = 0;
@@ -177,9 +178,25 @@ pid_t getppid(void)
 // Fake gettid() - similar to getpid but for thread IDs
 pid_t gettid(void)
 {
-	// For simplicity, return the same as getpid()
-	// In a real implementation, we'd track thread IDs separately
-	return getpid();
+	if (!initialized) {
+		init_fakepid();
+	}
+	
+	// Get real TID using syscall
+	pid_t real_tid = (pid_t)syscall(SYS_gettid);
+	
+	// If this is the init process, return 1
+	if (real_tid == real_init_pid) {
+		return 1;
+	}
+	
+	// For other threads, return a fake TID based on real TID
+	if (real_tid > real_init_pid) {
+		return real_tid - real_init_pid + 1;
+	}
+	
+	// Fallback: return real TID
+	return real_tid;
 }
 
 // Helper function to convert fake PID to real PID
