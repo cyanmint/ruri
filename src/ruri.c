@@ -1100,6 +1100,9 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 				case 'z':
 					container->enable_tty_signals = true;
 					break;
+				case '1':
+					container->fake_proc_pid1_ns = true;
+					break;
 				case 'O':
 					if (i == (strlen(argv[index]) - 1)) {
 						index++;
