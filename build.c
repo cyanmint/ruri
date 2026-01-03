@@ -790,7 +790,7 @@ int main(int argc, char **argv)
 		sprintf(define_commit, "-DRURI_COMMIT_ID=\"%s\"", COMMIT_ID);
 		check_and_add_cflag(define_commit, false);
 	} else {
-		check_and_add_cflag("-DRURI_COMMIT_ID=unknown", false);
+		check_and_add_cflag("-DRURI_COMMIT_ID=\"unknown\"", false);
 	}
 	if (!core_only) {
 		check_and_add_lib("-lcap", true);

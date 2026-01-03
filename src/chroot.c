@@ -28,7 +28,7 @@
  *
  */
 #include "include/ruri.h"
-#include "src/fakepid/libfakepid_embedded.h"
+#include "fakepid/libfakepid_embedded.h"
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
