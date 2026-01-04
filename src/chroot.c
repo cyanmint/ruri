@@ -974,7 +974,11 @@ void ruri_run_chroot_container_with_pidvirt(struct RURI_CONTAINER *_Nonnull cont
 		
 		// If hidepid == 4, initialize FUSE before entering container
 		if (container->hidepid == 4) {
+#ifndef DISABLE_FUSE
 			ruri_init_fuse_fs(container->container_dir, getpid());
+#else
+			ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
+#endif
 		}
 		
 		// Run the regular chroot container
