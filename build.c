@@ -197,6 +197,8 @@ char *OUTPUT = NULL;
 char *COMMIT_ID = NULL;
 int JOBS = 8;
 bool FORCE = false; // Force rebuild all files
+bool DISABLE_FUSE = false; // Whether FUSE support is disabled
+bool STATIC_BUILD = false; // Whether building a static binary
 // Not only args, but (char **) in fact.
 void add_args(char ***argv, const char *arg)
 {
@@ -632,7 +634,12 @@ void compile_files_parallel(char **files, int max_processes)
 void build()
 {
 	// compile src/*.c and src/easteregg/*.c
-	char **files = find_file(SRC_DIR, ".c", NULL);
+	// Create blacklist for files that should not be compiled
+	char **blacklist = NULL;
+	if (DISABLE_FUSE) {
+		add_args(&blacklist, "fuse_fs.c");
+	}
+	char **files = find_file(SRC_DIR, ".c", blacklist);
 	char easteregg_src[PATH_MAX];
 	sprintf(easteregg_src, "%s/easteregg", SRC_DIR);
 	char **easteregg_files = find_file(easteregg_src, ".c", NULL);
@@ -640,6 +647,7 @@ void build()
 		add_args(&files, easteregg_files[i]);
 	}
 	compile_files_parallel(files, JOBS);
+	free_args(blacklist);
 	free_args(easteregg_files);
 	free_args(files);
 	// Link
@@ -703,8 +711,11 @@ void default_cflags(void)
 	check_and_add_cflag("-ftrivial-auto-var-init=pattern", false);
 	check_and_add_cflag("-fcf-protection=full", false);
 	check_and_add_cflag("-flto=auto", false);
-	check_and_add_cflag("-fPIE", false);
-	check_and_add_cflag("-pie", false);
+	// PIE flags are incompatible with static linking
+	if (!STATIC_BUILD) {
+		check_and_add_cflag("-fPIE", false);
+		check_and_add_cflag("-pie", false);
+	}
 	check_and_add_cflag("-Wl,-z,relro", false);
 	check_and_add_cflag("-Wl,-z,noexecstack", false);
 	check_and_add_cflag("-Wl,-z,now", false);
@@ -777,6 +788,7 @@ int main(int argc, char **argv)
 			}
 		} else if (strcmp(argv[i], "--static") == 0 || strcmp(argv[i], "-s") == 0) {
 			check_and_add_cflag("-static", true);
+			STATIC_BUILD = true;
 		} else if (strcmp(argv[i], "--core-only") == 0 || strcmp(argv[i], "-c") == 0) {
 			core_only = true;
 		} else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -814,6 +826,7 @@ int main(int argc, char **argv)
 		} else {
 			// FUSE not available, disable FUSE support
 			check_and_add_cflag("-DDISABLE_FUSE", false);
+			DISABLE_FUSE = true;
 			printf("Warning: FUSE3 not found, -i 4 mode will be disabled\n");
 		}
 	} else {
@@ -821,6 +834,8 @@ int main(int argc, char **argv)
 		check_and_add_cflag("-DDISABLE_LIBCAP", true);
 		check_and_add_cflag("-DDISABLE_SECCOMP", true);
 		check_and_add_cflag("-DDISABLE_RURIENV", true);
+		check_and_add_cflag("-DDISABLE_FUSE", false);
+		DISABLE_FUSE = true;
 	}
 	build();
 	remove_test_dot_c();
