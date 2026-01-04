@@ -224,13 +224,13 @@ static int fuse_proc_read(const char *path, char *buf, size_t size, off_t offset
 	}
 	
 	ssize_t res = pread(fd, buf, size, offset);
-	int save_errno = errno;
-	close(fd);
-	
 	if (res == -1) {
+		int save_errno = errno;
+		close(fd);
 		return -save_errno;
 	}
 	
+	close(fd);
 	return (int)res;
 }
 
@@ -379,6 +379,7 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	
 	proc_ctx.base_pid = base_pid;
 	strncpy(proc_ctx.container_dir, container_dir, sizeof(proc_ctx.container_dir) - 1);
+	proc_ctx.container_dir[sizeof(proc_ctx.container_dir) - 1] = '\0'; // Ensure null termination
 	
 	// Create mount point for /proc
 	char proc_mount[PATH_MAX];
@@ -420,8 +421,7 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	pthread_attr_destroy(&attr);
 	
 	// Give FUSE time to initialize
-	#define FUSE_INIT_DELAY_US 100000
-	usleep(FUSE_INIT_DELAY_US); // 100ms
+	usleep(FUSE_INIT_DELAY_US);
 	
 	ruri_log("{base}FUSE filesystem virtualization started\n");
 }

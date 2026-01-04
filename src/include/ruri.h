@@ -34,6 +34,13 @@
 #else
 #define _GNU_SOURCE
 #endif
+// FUSE timing constants
+#ifndef DISABLE_FUSE
+// Time to wait for FUSE thread initialization (microseconds)
+#define FUSE_INIT_DELAY_US 100000  // 100ms
+// Time to wait for FUSE mount to be ready (microseconds)
+#define FUSE_MOUNT_DELAY_US 200000 // 200ms
+#endif
 #ifdef RURI_CORE_ONLY
 #ifndef DISABLE_LIBSECCOMP
 #define DISABLE_LIBSECCOMP

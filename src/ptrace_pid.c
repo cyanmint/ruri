@@ -227,15 +227,17 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 	while (1) {
 		// Continue and wait for next syscall
 		if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1) {
-			if (errno != ESRCH) {
-				ruri_warning("{yellow}PTRACE_SYSCALL failed: %s\n", strerror(errno));
+			int save_errno = errno;
+			if (save_errno != ESRCH) {
+				ruri_warning("{yellow}PTRACE_SYSCALL failed: %s\n", strerror(save_errno));
 			}
 			break;
 		}
 		
 		if (waitpid(child_pid, &status, 0) == -1) {
-			if (errno != ECHILD) {
-				ruri_warning("{yellow}waitpid in loop failed: %s\n", strerror(errno));
+			int save_errno = errno;
+			if (save_errno != ECHILD) {
+				ruri_warning("{yellow}waitpid in loop failed: %s\n", strerror(save_errno));
 			}
 			break;
 		}
