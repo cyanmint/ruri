@@ -57,3 +57,5 @@ _codeql_*
 build-new
 build-ruri
 build-test
+build-tool
+build-compiled
