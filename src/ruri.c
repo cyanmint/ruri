@@ -1347,7 +1347,12 @@ int ruri(int argc, char **argv)
 		ruri_run_rootless_container(container);
 	} else {
 		// Common chroot container.
-		ruri_run_chroot_container(container);
+		// If hidepid >= 3, use the PID virtualization wrapper
+		if (container->hidepid >= 3) {
+			ruri_run_chroot_container_with_pidvirt(container);
+		} else {
+			ruri_run_chroot_container(container);
+		}
 	}
 	return 0;
 }

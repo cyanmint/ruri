@@ -281,6 +281,7 @@ struct RURI_ELF_MAGIC *ruri_get_magic(const char *_Nonnull cross_arch);
 void ruri_run_unshare_container(struct RURI_CONTAINER *_Nonnull container);
 char *ruri_container_info_to_k2v(const struct RURI_CONTAINER *_Nonnull container);
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container);
+void ruri_run_chroot_container_with_pidvirt(struct RURI_CONTAINER *_Nonnull container);
 void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container);
 void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull container);
 int ruri_trymount(const char *_Nonnull source, const char *_Nonnull target, unsigned int mountflags);
