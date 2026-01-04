@@ -411,12 +411,14 @@ PID isolation and hidepid option for `/proc`:
 - Uses ptrace to intercept PID-related syscalls
 - The first process in the container thinks it's PID 1
 - All processes see a fake PID hierarchy
+- Supported architectures: x86_64, i386, aarch64, armhf, armv7
 
 **For `-i 4` mode:**
 - Includes all features from `-i 3` mode
 - Additionally mounts FUSE filesystems for /proc, /sys, /dev
 - Provides complete filesystem-level virtualization
 - Requires FUSE support (libfuse3)
+- Supported architectures: x86_64, i386, aarch64, armhf, armv7
 
 For more info on hidepid 1/2, refer to the man page of `proc(5)`.
 
