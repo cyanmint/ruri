@@ -796,6 +796,14 @@ int main(int argc, char **argv)
 		check_and_add_lib("-lcap", true);
 		check_and_add_lib("-lseccomp", true);
 		check_and_add_lib("-lpthread", false);
+		// Add FUSE3 library support for -i 4 mode
+		if (!check_lib("-lfuse3")) {
+			// FUSE not available, disable FUSE support
+			check_and_add_cflag("-DDISABLE_FUSE", false);
+		} else {
+			// FUSE available, link against it
+			check_and_add_lib("-lfuse3", false);
+		}
 	} else {
 		check_and_add_cflag("-DRURI_CORE_ONLY", true);
 		check_and_add_cflag("-DDISABLE_LIBCAP", true);
