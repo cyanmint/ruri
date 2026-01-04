@@ -165,7 +165,8 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 #ifndef DISABLE_FUSE
 			ruri_init_fuse_fs("/", getpid());
 			// Give FUSE time to fully initialize
-			usleep(200000); // 200ms
+			#define FUSE_MOUNT_DELAY_US 200000
+			usleep(FUSE_MOUNT_DELAY_US); // 200ms
 #else
 			ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
 #endif
@@ -916,7 +917,8 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 #ifndef DISABLE_FUSE
 		ruri_init_fuse_fs("/", getpid());
 		// Give FUSE time to fully initialize
-		usleep(200000); // 200ms
+		#define FUSE_MOUNT_DELAY_US 200000
+		usleep(FUSE_MOUNT_DELAY_US); // 200ms
 #else
 		ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
 #endif

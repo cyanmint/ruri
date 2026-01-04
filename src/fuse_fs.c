@@ -381,26 +381,28 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	strncpy(proc_ctx.container_dir, container_dir, sizeof(proc_ctx.container_dir) - 1);
 	
 	// Create mount point for /proc
-	char *proc_mount = (char *)malloc(PATH_MAX);
-	if (proc_mount == NULL) {
-		ruri_warning("{yellow}Failed to allocate memory for mount point\n");
-		return;
-	}
+	char proc_mount[PATH_MAX];
 	
 	// If container_dir is "/", we're already inside the container
 	if (strcmp(container_dir, "/") == 0) {
-		snprintf(proc_mount, PATH_MAX, "/proc");
+		snprintf(proc_mount, sizeof(proc_mount), "/proc");
 	} else {
-		snprintf(proc_mount, PATH_MAX, "%s/proc", container_dir);
+		snprintf(proc_mount, sizeof(proc_mount), "%s/proc", container_dir);
 	}
 	
 	// Ensure the directory exists
 	if (access(proc_mount, F_OK) != 0) {
 		if (mkdir(proc_mount, 0755) != 0 && errno != EEXIST) {
 			ruri_warning("{yellow}Failed to create /proc mount point: %s\n", strerror(errno));
-			free(proc_mount);
 			return;
 		}
+	}
+	
+	// Allocate string for thread (will be freed by thread)
+	char *proc_mount_copy = strdup(proc_mount);
+	if (proc_mount_copy == NULL) {
+		ruri_warning("{yellow}Failed to allocate memory for mount point\n");
+		return;
 	}
 	
 	// Start FUSE in a separate thread
@@ -408,9 +410,9 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	
-	if (pthread_create(&global_fuse_thread, &attr, fuse_proc_thread, proc_mount) != 0) {
+	if (pthread_create(&global_fuse_thread, &attr, fuse_proc_thread, proc_mount_copy) != 0) {
 		ruri_warning("{yellow}Failed to create FUSE thread: %s\n", strerror(errno));
-		free(proc_mount);
+		free(proc_mount_copy);
 		pthread_attr_destroy(&attr);
 		return;
 	}
@@ -418,7 +420,8 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	pthread_attr_destroy(&attr);
 	
 	// Give FUSE time to initialize
-	usleep(100000); // 100ms
+	#define FUSE_INIT_DELAY_US 100000
+	usleep(FUSE_INIT_DELAY_US); // 100ms
 	
 	ruri_log("{base}FUSE filesystem virtualization started\n");
 }
@@ -430,16 +433,13 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
  * Users should verify its correctness before use.
  */
 // Cleanup FUSE filesystem
+// Note: This is called on exit; FUSE will be automatically unmounted when the process exits
 void ruri_cleanup_fuse_fs(void)
 {
-	if (global_fuse != NULL) {
-		// Signal FUSE to unmount
-		if (global_fuse_thread != 0) {
-			pthread_cancel(global_fuse_thread);
-			global_fuse_thread = 0;
-		}
-		global_fuse = NULL;
-	}
+	// FUSE will be automatically cleaned up when the process exits
+	// We don't use pthread_cancel as it can leave resources in inconsistent state
+	global_fuse = NULL;
+	global_fuse_thread = 0;
 }
 
 #else
