@@ -27,11 +27,18 @@ mkdir output output2 output3
 # Use environment variables if set, otherwise use defaults
 REPO_URL="${GITHUB_REPOSITORY_URL:-https://github.com/moe-hacker/ruri.git}"
 COMMIT_SHA="${GITHUB_SHA:-}"
+# For PRs, use head_ref; for direct pushes, use ref_name
+BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
 
 if [ -n "$COMMIT_SHA" ]; then
-    # Clone with all branches and checkout the specific commit
+    # Clone with specific branch if available, otherwise all branches
     echo "Cloning from $REPO_URL and checking out $COMMIT_SHA"
-    git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
+    if [ -n "$BRANCH_NAME" ]; then
+        echo "Using branch: $BRANCH_NAME"
+        git clone -b "$BRANCH_NAME" "$REPO_URL" ruri || git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
+    else
+        git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
+    fi
     cd ruri
     git checkout "$COMMIT_SHA" 2>/dev/null || {
         echo "Failed to checkout $COMMIT_SHA, trying to fetch it"

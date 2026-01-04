@@ -99,6 +99,8 @@ jobs:
           cat > "$ARCHITECTURE/build_env.sh" << 'EOF'
           export GITHUB_REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
           export GITHUB_SHA="${{ github.sha }}"
+          export GITHUB_REF_NAME="${{ github.ref_name }}"
+          export GITHUB_HEAD_REF="${{ github.head_ref }}"
           EOF
           
           cp build.sh "$ARCHITECTURE/build.sh"
