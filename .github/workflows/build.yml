@@ -51,6 +51,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         arch: [x86_64, x86, aarch64, armhf, armv7, ppc64le, loongarch64, riscv64, s390x]
         #arch: [x86_64, x86, aarch64, armhf, armv7, ppc64le, loongarch64, riscv64]
@@ -93,6 +94,15 @@ jobs:
         shell: bash
         run: |
           cd build
+          
+          # Prepare environment variables for the build script
+          cat > "$ARCHITECTURE/build_env.sh" << 'EOF'
+          export GITHUB_REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
+          export GITHUB_SHA="${{ github.sha }}"
+          export GITHUB_REF_NAME="${{ github.ref_name }}"
+          export GITHUB_HEAD_REF="${{ github.head_ref }}"
+          EOF
+          
           cp build.sh "$ARCHITECTURE/build.sh"
           sudo chmod +x ../ruri
           sudo chmod +x "$ARCHITECTURE/build.sh"

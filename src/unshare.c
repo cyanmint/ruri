@@ -110,6 +110,10 @@ static pid_t init_unshare_container(struct RURI_CONTAINER *_Nonnull container)
 				ruri_warning("{base}NS PID:{green} %d\n", unshare_pid);
 			}
 		}
+		// If hidepid >= 3, wrap child with ptrace for PID virtualization
+		if (container->hidepid >= 3) {
+			ruri_ptrace_pid_wrapper(unshare_pid);
+		}
 		// Fix `can't access tty` issue.
 		int stat = 0;
 		waitpid(unshare_pid, &stat, 0);

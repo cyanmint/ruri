@@ -2,8 +2,14 @@ if [ -f /etc/resolv.conf ]; then
     rm /etc/resolv.conf
 fi
 echo nameserver 1.1.1.1 >/etc/resolv.conf
+
+# Source build environment variables if available
+if [ -f /build_env.sh ]; then
+    . /build_env.sh
+fi
+
 apk update --no-cache
-for i in wget make clang git libseccomp-dev libseccomp-static libcap-static libcap-dev xz-dev libintl libbsd-static libsemanage-dev libselinux-utils libselinux-static xz-libs zlib zlib-static libselinux-dev linux-headers libssl3 libbsd libbsd-dev gettext-libs gettext-static gettext-dev gettext python3 build-base openssl-misc openssl-libs-static openssl zlib-dev xz-dev openssl-dev automake libtool bison flex gettext autoconf gettext sqlite sqlite-dev pcre-dev wget texinfo docbook-xsl libxslt docbook2x musl-dev gettext gettext-asprintf gettext-dbg gettext-dev gettext-doc gettext-envsubst gettext-lang gettext-libs gettext-static
+for i in wget make clang git libseccomp-dev libseccomp-static libcap-static libcap-dev xz-dev libintl libbsd-static libselinux-utils libselinux-static xz-libs zlib zlib-static libselinux-dev linux-headers libssl3 libbsd libbsd-dev gettext-libs gettext-static gettext-dev gettext python3 build-base openssl-misc openssl-libs-static openssl zlib-dev xz-dev openssl-dev automake libtool bison flex gettext autoconf gettext sqlite sqlite-dev pcre-dev wget texinfo docbook-xsl libxslt docbook2x musl-dev gettext gettext-asprintf gettext-dbg gettext-dev gettext-doc gettext-envsubst gettext-lang gettext-libs gettext-static fuse3 fuse3-dev fuse3-static
 do
     if apk search -q $i >/dev/null 2>&1; then
         apk add $i || true
@@ -18,8 +24,45 @@ done
 
 mkdir output output2 output3
 
-git clone --depth 1 https://github.com/moe-hacker/ruri.git
-cd ruri
+# Use environment variables if set, otherwise use defaults
+REPO_URL="${GITHUB_REPOSITORY_URL:-https://github.com/moe-hacker/ruri.git}"
+COMMIT_SHA="${GITHUB_SHA:-}"
+# For PRs, use head_ref; for direct pushes, use ref_name
+BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
+
+# Remove refs/heads/ or refs/pull/ prefix if present
+BRANCH_NAME="${BRANCH_NAME#refs/heads/}"
+BRANCH_NAME="${BRANCH_NAME#refs/pull/}"
+
+if [ -n "$COMMIT_SHA" ]; then
+    # Clone with specific branch if available, otherwise all branches
+    echo "Cloning from $REPO_URL and checking out $COMMIT_SHA"
+    if [ -n "$BRANCH_NAME" ]; then
+        echo "Using branch: $BRANCH_NAME"
+        git clone -b "$BRANCH_NAME" "$REPO_URL" ruri 2>/dev/null || {
+            echo "Branch clone failed, trying --no-single-branch"
+            git clone --no-single-branch "$REPO_URL" ruri 2>/dev/null || git clone "$REPO_URL" ruri
+        }
+    else
+        git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
+    fi
+    cd ruri
+    git checkout "$COMMIT_SHA" 2>/dev/null || {
+        echo "Failed to checkout $COMMIT_SHA, trying to fetch it"
+        git fetch origin "$COMMIT_SHA" 2>/dev/null || true
+        git checkout "$COMMIT_SHA" 2>/dev/null || {
+            echo "Warning: Could not checkout $COMMIT_SHA, using current HEAD"
+            git checkout HEAD
+        }
+    }
+else
+    # Fallback to shallow clone of default branch
+    git clone --depth 1 "$REPO_URL" ruri
+    cd ruri
+fi
+
+echo "Building from commit: $(git rev-parse --short HEAD)"
+
 cc build.c -o build-ruri
 ./build-ruri -s -f
 

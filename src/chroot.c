@@ -645,6 +645,9 @@ static void hidepid(int stat)
 {
 	/*
 	 * Hide pid option for mounting /proc.
+	 * stat 0-2: standard hidepid values
+	 * stat 3: ptrace-based PID virtualization (handled by parent wrapper)
+	 * stat 4: FUSE-based filesystem virtualization (handled by parent wrapper)
 	 */
 	if (stat <= 0) {
 		return;
@@ -655,6 +658,8 @@ static void hidepid(int stat)
 	} else if (stat == 2) {
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
 	}
+	// For stat 3 and 4, PID virtualization is handled by the parent process
+	// via ptrace wrapper, so no action needed here
 }
 static void set_oom_score(int score)
 {
@@ -935,5 +940,46 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	if (execvp(container->command[0], container->command) == -1) {
 		// Catch exceptions.
 		ruri_error("{red}Failed to execute `%s`\nexecv() returned: %d\nerror reason: %s\nNote: unset $LD_PRELOAD before running ruri might fix this{clear}\n", container->command[0], errno, strerror(errno));
+	}
+}
+// Wrapper for chroot container with PID virtualization (-i 3 or 4)
+// This forks a child to run the container and traces it with ptrace
+void ruri_run_chroot_container_with_pidvirt(struct RURI_CONTAINER *_Nonnull container)
+{
+	/*
+	 * This wrapper is used when hidepid >= 3 in regular chroot mode.
+	 * It forks a child process to run the container and uses ptrace
+	 * to virtualize PIDs, similar to what PID namespaces would do
+	 * but without requiring kernel namespace support.
+	 */
+	pid_t pid = fork();
+	if (pid > 0) {
+		// Parent process - trace the child
+		ruri_log("{base}Forked child PID %d for PID virtualization\n", pid);
+		
+		// If hidepid >= 3, wrap child with ptrace for PID virtualization
+		if (container->hidepid >= 3) {
+			ruri_ptrace_pid_wrapper(pid);
+		}
+		
+		// Wait for child process to exit
+		int stat = 0;
+		waitpid(pid, &stat, 0);
+		exit(WEXITSTATUS(stat));
+	} else if (pid < 0) {
+		ruri_error("{red}Fork error for PID virtualization QwQ?\n");
+	} else {
+		// Child process - initialize ptrace first
+		ruri_init_ptrace_pid();
+		
+		// If hidepid == 4, initialize FUSE before entering container
+		if (container->hidepid == 4) {
+			ruri_init_fuse_fs(container->container_dir, getpid());
+		}
+		
+		// Run the regular chroot container
+		// Note: hidepid() will be called inside but won't call ruri_init_ptrace_pid()
+		// again since we're already being traced
+		ruri_run_chroot_container(container);
 	}
 }

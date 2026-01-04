@@ -16,7 +16,7 @@ else
     AC_ARG_ENABLE([libcap],[AS_HELP_STRING([--disable-libcap],[Disable libcap support])],[enable_libcap=no],[enable_libcap=yes])
     if test "$enable_libcap" != "no";then
         AC_CHECK_LIB([cap],[cap_init],[LIBCAP_LIB="-lcap"],[LIBCAP_LIB=""])
-        if test "$LIBCAP_LIB" == "";then
+        if test "$LIBCAP_LIB" = "";then
         AC_MSG_ERROR([libcap not found])
         fi
         DISABLE_LIBCAP_CFLAGS=""
@@ -28,7 +28,7 @@ else
     AC_ARG_ENABLE([libseccomp],[AS_HELP_STRING([--disable-libseccomp],[Disable libseccomp support])],[enable_libseccomp=no],[enable_libseccomp=yes])
     if test "$enable_libseccomp" != "no";then
         AC_CHECK_LIB([seccomp],[seccomp_init],[LIBSECCOMP_LIB="-lseccomp"],[LIBSECCOMP_LIB=""])
-        if test "$LIBSECCOMP_LIB" == "";then
+        if test "$LIBSECCOMP_LIB" = "";then
             AC_MSG_ERROR([libseccomp not found])
         fi
         DISABLE_LIBSECCOMP_CFLAGS=""
@@ -43,6 +43,21 @@ else
     else
         AC_MSG_NOTICE([.rurienv support disabled])
         DISABLE_RURIENV_CFLAGS="-DDISABLE_RURIENV"
+    fi
+    AC_ARG_ENABLE([fuse],[AS_HELP_STRING([--disable-fuse],[Disable FUSE support for -i 4 mode])],[enable_fuse=no],[enable_fuse=yes])
+    if test "$enable_fuse" != "no";then
+        AC_CHECK_LIB([fuse3],[fuse_new],[LIBFUSE_LIB="-lfuse3"],[LIBFUSE_LIB=""])
+        if test "$LIBFUSE_LIB" = "";then
+            AC_MSG_NOTICE([libfuse3 not found, FUSE support disabled])
+            LIBFUSE_LIB=""
+            DISABLE_FUSE_CFLAGS="-DDISABLE_FUSE"
+        else
+            DISABLE_FUSE_CFLAGS=""
+        fi
+    else
+        AC_MSG_NOTICE([FUSE support disabled])
+        LIBFUSE_LIB=""
+        DISABLE_FUSE_CFLAGS="-DDISABLE_FUSE"
     fi
 fi
 CFLAGS=""
@@ -131,8 +146,8 @@ else
     AC_MSG_RESULT([$RURI_COMMIT_ID])
     RURI_COMMIT_ID="-DRURI_COMMIT_ID=\\\"$RURI_COMMIT_ID\\\""
 fi
-CFLAGS="$CFLAGS $RURI_COMMIT_ID $COREONLY_CFLAGS $DEBUG_CFLAGS $DEV_CFLAGS $STATIC_CFLAGS $DISABLE_LIBCAP_CFLAGS $DISABLE_LIBSECCOMP_CFLAGS $DISABLE_RURIENV_CFLAGS"
-LD_FLAGS="$PTHREAD_LIB $LIBCAP_LIB $LIBSECCOMP_LIB"
+CFLAGS="$CFLAGS $RURI_COMMIT_ID $COREONLY_CFLAGS $DEBUG_CFLAGS $DEV_CFLAGS $STATIC_CFLAGS $DISABLE_LIBCAP_CFLAGS $DISABLE_LIBSECCOMP_CFLAGS $DISABLE_RURIENV_CFLAGS $DISABLE_FUSE_CFLAGS"
+LD_FLAGS="$PTHREAD_LIB $LIBCAP_LIB $LIBSECCOMP_LIB $LIBFUSE_LIB"
 AC_SUBST([STRIP],[$STRIP])
 AC_SUBST([CC],[$CC])
 AC_SUBST([CFLAGS],[$CFLAGS])

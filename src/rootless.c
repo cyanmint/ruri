@@ -430,6 +430,10 @@ void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 				ruri_warning("{base}NS PID:{green} %d\n", container->ns_pid);
 			}
 		}
+		// If hidepid >= 3, wrap child with ptrace for PID virtualization
+		if (container->hidepid >= 3) {
+			ruri_ptrace_pid_wrapper(pid);
+		}
 		// Wait for child process to exit.
 		int stat = 0;
 		waitpid(pid, &stat, 0);
@@ -440,6 +444,10 @@ void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 		// Init rootless container.
 		if (!container->just_chroot) {
 			init_rootless_container(container);
+		}
+		// If hidepid == 4, initialize FUSE before entering container
+		if (container->hidepid == 4) {
+			ruri_init_fuse_fs(container->container_dir, getpid());
 		}
 		usleep(1000);
 		ruri_run_rootless_chroot_container(container);
