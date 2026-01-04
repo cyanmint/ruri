@@ -424,8 +424,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		else if (strcmp(argv[index], "-i") == 0 || strcmp(argv[index], "--hidepid") == 0) {
 			index++;
 			container->hidepid = atoi(argv[index]);
-			if (container->hidepid < 0 || container->hidepid > 3) {
-				ruri_error("{red}hidepid should be in range 0-3\n");
+			if (container->hidepid < 0 || container->hidepid > 4) {
+				ruri_error("{red}hidepid should be in range 0-4\n");
 			}
 		}
 		// OOM score.
@@ -686,8 +686,6 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 			}
 		} else if (strcmp(argv[index], "-z") == 0 || strcmp(argv[index], "--enable-tty-signals") == 0) {
 			container->enable_tty_signals = true;
-		} else if (strcmp(argv[index], "-1") == 0 || strcmp(argv[index], "--fake-proc-pid1-namespace") == 0) {
-			container->fake_proc_pid1_ns = true;
 		} else if (strcmp(argv[index], "-Y") == 0 || strcmp(argv[index], "--redroid") == 0) {
 			container->redroid_mode = true;
 		}
@@ -1092,8 +1090,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					if (i == (strlen(argv[index]) - 1)) {
 						index++;
 						container->hidepid = atoi(argv[index]);
-						if (container->hidepid < 0 || container->hidepid > 3) {
-							ruri_error("{red}hidepid should be in range 0-3\n");
+						if (container->hidepid < 0 || container->hidepid > 4) {
+							ruri_error("{red}hidepid should be in range 0-4\n");
 						}
 					} else {
 						ruri_error("Invalid argument %s\n", argv[index]);
@@ -1101,9 +1099,6 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					break;
 				case 'z':
 					container->enable_tty_signals = true;
-					break;
-				case '1':
-					container->fake_proc_pid1_ns = true;
 					break;
 				case 'Y':
 					container->redroid_mode = true;
@@ -1197,8 +1192,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		}
 	}
 	// Check for conflicting flags
-	if (container->hidepid == 3 && container->mount_host_runtime) {
-		ruri_error("{red}Error: -i 3 conflicts with -S/--host-runtime\n{clear}The -i 3 option emulates all bind mounts internally and should not be used with -S\n");
+	if ((container->hidepid == 3 || container->hidepid == 4) && container->mount_host_runtime) {
+		ruri_error("{red}Error: -i 3/4 conflicts with -S/--host-runtime\n{clear}The -i 3/4 options emulate all bind mounts internally and should not be used with -S\n");
 	}
 	// Fork to background if -b is set.
 	if (background) {

@@ -29,6 +29,9 @@
  */
 #include "include/ruri.h"
 #include "fakepid/libfakepid_embedded.h"
+#ifdef ENABLE_FUSE
+#include "fuse/fakefs.h"
+#endif
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -309,46 +312,43 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * This function will be called before chroot(2),
 	 * so it's before init_container().
 	 * 
-	 * AI-GENERATED MODIFICATION:
-	 * Skip /proc if fake_proc_pid1_ns (-1) or hidepid=3 (-i 3) is enabled,
-	 * as we'll create a fake /proc instead.
-	 * Skip /dev and /sys if hidepid=3 is enabled, as we'll create
-	 * them from scratch instead for complete PID isolation.
+	 * Skip /proc, /dev, and /sys if hidepid=3 (-i 3) is enabled,
+	 * as we'll create fake versions instead for complete PID isolation.
 	 */
 	char buf[PATH_MAX] = { '\0' };
-	// Mount /dev - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount /dev - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev", container->container_dir);
 		mount("/dev", buf, NULL, MS_BIND, NULL);
 	}
-	// mount /proc - skip if fake_proc_pid1_ns or hidepid=3 is enabled.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// mount /proc - skip if hidepid=3/4 is enabled.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount /sys - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount /sys - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/sys", container->container_dir);
 		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount binfmt_misc - skip if fake_proc_pid1_ns or hidepid=3 is enabled since /proc is not mounted.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// Mount binfmt_misc - skip if hidepid=3/4 is enabled since /proc is not mounted.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
 		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
 	}
-	// Mount devpts - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount devpts - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev/pts", container->container_dir);
 		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		mount("/dev/pts", buf, "none", MS_BIND, NULL);
 	}
-	// Mount devshm - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount devshm - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		char *devshm_options = NULL;
 		if (container->memory == NULL) {
 			devshm_options = strdup("mode=1777");
@@ -619,8 +619,8 @@ static void copy_fakepid_library(struct RURI_CONTAINER *container)
 	 * The library is embedded in the ruri binary and extracted at runtime
 	 * to avoid needing separate library files.
 	 */
-	// If -1 or -i 3 is not set, return.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// If -i 3 or -i 4 is not set, return.
+	if (container->hidepid < 3) {
 		return;
 	}
 	
@@ -953,71 +953,54 @@ static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull conta
  * This function was generated with the assistance of AI (GitHub Copilot).
  * Users should verify its correctness before use.
  */
-static void setup_fake_proc(pid_t init_pid)
+#ifdef ENABLE_FUSE
+static void setup_fuse_mounts(const struct RURI_CONTAINER *_Nonnull container)
 {
 	/*
-	 * Create a fake /proc filesystem that makes the init process appear as PID 1.
-	 * 
-	 * This does NOT use PID namespaces. Instead, it uses LD_PRELOAD to intercept
-	 * getpid() calls and creates /proc/1 entries to fool programs.
-	 * 
-	 * Approach:
-	 * 1. Set RURI_FAKE_INIT_PID environment variable
-	 * 2. Set LD_PRELOAD to load libfakepid.so (only if it exists and is accessible)
-	 * 3. Create /proc/1 as a symlink to /proc/<real_init_pid>
+	 * Set up FUSE-based filesystem mounts for /proc, /sys, /dev
+	 * This is used by -i 4 mode to provide complete filesystem isolation
+	 * with FUSE passthrough filesystems.
 	 */
+	char mountpoint[PATH_MAX];
+	char source[PATH_MAX];
 	
-	// Set environment variable for LD_PRELOAD library
-	char init_pid_str[32];
-	sprintf(init_pid_str, "%d", init_pid);
-	setenv("RURI_FAKE_INIT_PID", init_pid_str, 1);
-	
-	// Set LD_PRELOAD - the library should be at /lib/libfakepid.so in container
-	// This will be copied there during container setup
-	// Only set if the library exists and is a regular file
-	const char *preload_paths[] = {
-		"/lib/libfakepid.so",
-		"/usr/lib/libfakepid.so",
-		"/usr/local/lib/libfakepid.so",
-		NULL
-	};
-	
-	bool preload_set = false;
-	for (int i = 0; preload_paths[i] != NULL; i++) {
-		struct stat st;
-		if (stat(preload_paths[i], &st) == 0 && S_ISREG(st.st_mode)) {
-			// Verify the file is readable and executable
-			if (access(preload_paths[i], R_OK | X_OK) == 0) {
-				setenv("LD_PRELOAD", preload_paths[i], 1);
-				preload_set = true;
-				ruri_log("{base}Set LD_PRELOAD to %s\n", preload_paths[i]);
-				break;
-			}
-		}
+	// Mount /proc with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/proc", container->container_dir);
+	snprintf(source, sizeof(source), "/proc");
+	mkdir(mountpoint, 0755);
+	int proc_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (proc_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /proc (PID: %d)\n", proc_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /proc\n");
 	}
 	
-	if (!preload_set) {
-		ruri_log("{base}Warning: libfakepid.so not found, fake PID may not work for all programs\n");
+	// Mount /sys with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/sys", container->container_dir);
+	snprintf(source, sizeof(source), "/sys");
+	mkdir(mountpoint, 0755);
+	int sys_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (sys_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /sys (PID: %d)\n", sys_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /sys\n");
 	}
 	
-	// Create /proc/1 as a symlink to the real init process
-	char real_proc_init[PATH_MAX];
-	sprintf(real_proc_init, "%d", init_pid);
-	
-	// Remove /proc/1 if it exists
-	rmdir("/proc/1");
-	unlink("/proc/1");
-	
-	// Try to create a symlink to the real PID directory
-	// This makes /proc/1 point to /proc/<real_init_pid>
-	if (symlink(real_proc_init, "/proc/1") == -1) {
-		// If symlink fails, try bind mount
-		char full_path[PATH_MAX];
-		sprintf(full_path, "/proc/%d", init_pid);
-		mkdir("/proc/1", 0555);
-		mount(full_path, "/proc/1", NULL, MS_BIND, NULL);
+	// Mount /dev with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/dev", container->container_dir);
+	snprintf(source, sizeof(source), "/dev");
+	mkdir(mountpoint, 0755);
+	int dev_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (dev_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /dev (PID: %d)\n", dev_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /dev\n");
 	}
+	
+	// Wait a bit for all FUSE mounts to stabilize
+	usleep(300000); /* 300ms */
 }
+#endif /* ENABLE_FUSE */
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 {
@@ -1120,13 +1103,17 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
-		if (container->hidepid == 3) {
-			setup_fake_proc_complete(container, getpid(), container->hidepid);
-		} else {
-			setup_fake_proc(getpid());
-		}
+	// Setup FUSE mounts for hidepid=4
+	#ifdef ENABLE_FUSE
+	if (container->hidepid == 4) {
+		setup_fuse_mounts(container);
+		// Also set up LD_PRELOAD for PID faking
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
+	}
+	#endif
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Fix /etc/mtab.
 	if (!container->just_chroot) {
@@ -1256,13 +1243,17 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
-		if (container->hidepid == 3) {
-			setup_fake_proc_complete(container, getpid(), container->hidepid);
-		} else {
-			setup_fake_proc(getpid());
-		}
+	// Setup FUSE mounts for hidepid=4
+	#ifdef ENABLE_FUSE
+	if (container->hidepid == 4) {
+		setup_fuse_mounts(container);
+		// Also set up LD_PRELOAD for PID faking
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
+	}
+	#endif
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Setup binfmt_misc.
 	if (container->cross_arch != NULL) {

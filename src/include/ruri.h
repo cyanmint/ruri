@@ -210,8 +210,6 @@ struct RURI_CONTAINER {
 	bool enable_tty_signals;
 	// Skip setting groups for user
 	bool skip_setgroups;
-	// Fake /proc and pid namespace to make init think it's pid1
-	bool fake_proc_pid1_ns;
 	// Redroid/Android container mode
 	bool redroid_mode;
 };
