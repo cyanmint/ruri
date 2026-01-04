@@ -656,6 +656,12 @@ void build()
 	for (int i = 0; LIBS && LIBS[i] != NULL; i++) {
 		add_args(&args, LIBS[i]);
 	}
+	// Print linking command for debugging
+	printf("Linking with command: ");
+	for (int i = 0; args[i] != NULL; i++) {
+		printf("%s ", args[i]);
+	}
+	printf("\n");
 	if (fork_exec(args) != 0) {
 		error("Error: failed to link object files\n");
 	}
