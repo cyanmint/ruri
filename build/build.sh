@@ -2,6 +2,12 @@ if [ -f /etc/resolv.conf ]; then
     rm /etc/resolv.conf
 fi
 echo nameserver 1.1.1.1 >/etc/resolv.conf
+
+# Source build environment variables if available
+if [ -f /build_env.sh ]; then
+    . /build_env.sh
+fi
+
 apk update --no-cache
 for i in wget make clang git libseccomp-dev libseccomp-static libcap-static libcap-dev xz-dev libintl libbsd-static libsemanage-dev libselinux-utils libselinux-static xz-libs zlib zlib-static libselinux-dev linux-headers libssl3 libbsd libbsd-dev gettext-libs gettext-static gettext-dev gettext python3 build-base openssl-misc openssl-libs-static openssl zlib-dev xz-dev openssl-dev automake libtool bison flex gettext autoconf gettext sqlite sqlite-dev pcre-dev wget texinfo docbook-xsl libxslt docbook2x musl-dev gettext gettext-asprintf gettext-dbg gettext-dev gettext-doc gettext-envsubst gettext-lang gettext-libs gettext-static
 do
@@ -18,8 +24,21 @@ done
 
 mkdir output output2 output3
 
-git clone --depth 1 https://github.com/moe-hacker/ruri.git
-cd ruri
+# Use environment variables if set, otherwise use defaults
+REPO_URL="${GITHUB_REPOSITORY_URL:-https://github.com/moe-hacker/ruri.git}"
+COMMIT_SHA="${GITHUB_SHA:-}"
+
+if [ -n "$COMMIT_SHA" ]; then
+    # Clone the specific commit
+    git clone "$REPO_URL" ruri
+    cd ruri
+    git checkout "$COMMIT_SHA"
+else
+    # Fallback to shallow clone of default branch
+    git clone --depth 1 "$REPO_URL" ruri
+    cd ruri
+fi
+
 cc build.c -o build-ruri
 ./build-ruri -s -f
 
