@@ -312,12 +312,12 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * AI-GENERATED MODIFICATION:
 	 * Skip /proc if fake_proc_pid1_ns (-1) is enabled, as we'll create
 	 * a fake /proc instead.
-	 * Skip /dev and /sys if redroid_mode (-Y) is enabled, as we'll create
-	 * them from scratch instead.
+	 * Skip /dev and /sys if hidepid=3 is enabled, as we'll create
+	 * them from scratch instead for complete PID isolation.
 	 */
 	char buf[PATH_MAX] = { '\0' };
-	// Mount /dev - skip if redroid_mode is enabled.
-	if (!container->redroid_mode) {
+	// Mount /dev - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev", container->container_dir);
 		mount("/dev", buf, NULL, MS_BIND, NULL);
@@ -328,8 +328,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount /sys - skip if redroid_mode is enabled.
-	if (!container->redroid_mode) {
+	// Mount /sys - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/sys", container->container_dir);
 		mount("/sys", buf, NULL, MS_BIND, NULL);
@@ -340,15 +340,15 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
 		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
 	}
-	// Mount devpts - skip if redroid_mode is enabled.
-	if (!container->redroid_mode) {
+	// Mount devpts - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev/pts", container->container_dir);
 		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		mount("/dev/pts", buf, "none", MS_BIND, NULL);
 	}
-	// Mount devshm - skip if redroid_mode is enabled.
-	if (!container->redroid_mode) {
+	// Mount devshm - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
 		char *devshm_options = NULL;
 		if (container->memory == NULL) {
 			devshm_options = strdup("mode=1777");
@@ -867,7 +867,7 @@ static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull conta
 {
 	/*
 	 * Create a complete fake /proc filesystem with PID isolation.
-	 * This is used when hidepid=3 is set with -1 and -Y flags.
+	 * This is used when hidepid=3 is set with -1 flag.
 	 * 
 	 * This provides the same level of PID isolation as unshare --pid
 	 * but WITHOUT requiring kernel PID namespace support.
