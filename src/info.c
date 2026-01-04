@@ -166,7 +166,8 @@ void ruri_show_helps(void)
 	cprintf("{base}(*13) : This can only be used when the `-N` option is enabled\n");
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
-	cprintf("{base}(*16) : Enables Android/redroid container support. Uses /system/bin/sh as default shell, sets up Android-specific environment, and starts logcat for /init\n");
+	cprintf("{base}(*16) : Enables Android/redroid container support. Uses /system/bin/sh as default shell, sets up Android-specific environment,\n");
+	cprintf("{base}        starts logcat for /init, and automatically enables -i 4 for FUSE-based filesystem emulation\n");
 	cprintf("{base}(*17) : hidepid=1 hides other users' processes, hidepid=2 makes /proc/<pid> invisible to other users.\n");
 	cprintf("{base}        hidepid=3 provides complete PID isolation using LD_PRELOAD to fake getpid() WITHOUT PID namespaces.\n");
 	cprintf("{base}        hidepid=4 adds FUSE-based /proc, /sys, /dev emulation for enhanced Android/redroid compatibility.\n");
