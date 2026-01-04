@@ -141,8 +141,11 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 	
 	// Wait for child to be ready
 	if (waitpid(child_pid, &status, 0) == -1) {
+		fprintf(stderr, "DEBUG: Initial waitpid failed: %s\n", strerror(errno));
 		return;
 	}
+	
+	fprintf(stderr, "DEBUG: Child stopped, status=%d, WIFSTOPPED=%d\n", status, WIFSTOPPED(status));
 	
 	// Enable ptrace options to trace syscalls
 	if (ptrace(PTRACE_SETOPTIONS, child_pid, 0,
@@ -154,6 +157,8 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 		return;
 	}
 	
+	fprintf(stderr, "DEBUG: Ptrace options set successfully\n");
+	
 #if defined(__x86_64__) || defined(__aarch64__)
 	// Platform-specific implementation
 	ruri_log("{base}Starting PID virtualization for %s\n", 
@@ -164,18 +169,24 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 #endif
 	);
 	
+	fprintf(stderr, "DEBUG: Entering ptrace loop\n");
+	int syscall_count = 0;
+	
 	// Main ptrace loop - intercept syscalls
 	while (1) {
 		// Continue and wait for next syscall
 		if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1) {
+			fprintf(stderr, "DEBUG: PTRACE_SYSCALL failed: %s\n", strerror(errno));
 			break;
 		}
 		
 		if (waitpid(child_pid, &status, 0) == -1) {
+			fprintf(stderr, "DEBUG: waitpid in loop failed: %s\n", strerror(errno));
 			break;
 		}
 		
 		if (WIFEXITED(status) || WIFSIGNALED(status)) {
+			fprintf(stderr, "DEBUG: Child exited or signaled\n");
 			break;
 		}
 		
@@ -195,15 +206,25 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 		// x86_64 implementation
 		struct user_regs_struct regs;
 		if (ptrace(PTRACE_GETREGS, child_pid, 0, &regs) == -1) {
+			fprintf(stderr, "DEBUG: PTRACE_GETREGS failed: %s\n", strerror(errno));
 			continue;
 		}
 		
 		if (!in_syscall) {
 			// Entering syscall
+			syscall_count++;
+			long entering_syscall = regs.orig_rax;
+			if (syscall_count <= 10 || entering_syscall == SYS_getpid_arch) {
+				fprintf(stderr, "DEBUG: Syscall #%d ENTERING, orig_rax=%ld\n", syscall_count, entering_syscall);
+			}
 			in_syscall = true;
 		} else {
 			// Exiting syscall - check if it's a PID-related syscall
 			long syscall_num = regs.orig_rax;
+			
+			if (syscall_count <= 10 || syscall_num == SYS_getpid_arch) {
+				fprintf(stderr, "DEBUG: Syscall #%d EXITING, orig_rax=%ld, rax=%lld\n", syscall_count, syscall_num, (long long)regs.rax);
+			}
 			
 			if (syscall_num == SYS_getpid_arch || 
 			    syscall_num == SYS_getppid_arch ||
@@ -215,8 +236,18 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 				if (real_pid > 0) {
 					pid_t fake_pid = get_fake_pid(real_pid);
 					// Modify the return value
+					unsigned long old_rax = regs.rax;
 					regs.rax = fake_pid;
-					ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+					int setregs_result = ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+					
+					fprintf(stderr, "DEBUG: Mapped PID %d -> %d for syscall %ld, SETREGS result=%d\n", 
+					         real_pid, fake_pid, syscall_num, setregs_result);
+					
+					// Verify the change
+					struct user_regs_struct verify_regs;
+					if (ptrace(PTRACE_GETREGS, child_pid, 0, &verify_regs) == 0) {
+						fprintf(stderr, "DEBUG: Verified rax changed from %lu to %lu\n", old_rax, verify_regs.rax);
+					}
 					
 					ruri_log("{base}Mapped PID %d -> %d for syscall %ld\n", 
 					         real_pid, fake_pid, syscall_num);
