@@ -310,8 +310,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * so it's before init_container().
 	 * 
 	 * AI-GENERATED MODIFICATION:
-	 * Skip /proc if fake_proc_pid1_ns (-1) is enabled, as we'll create
-	 * a fake /proc instead.
+	 * Skip /proc if fake_proc_pid1_ns (-1) or hidepid=3 (-i 3) is enabled,
+	 * as we'll create a fake /proc instead.
 	 * Skip /dev and /sys if hidepid=3 is enabled, as we'll create
 	 * them from scratch instead for complete PID isolation.
 	 */
@@ -322,8 +322,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/dev", container->container_dir);
 		mount("/dev", buf, NULL, MS_BIND, NULL);
 	}
-	// mount /proc - skip if fake_proc_pid1_ns is enabled.
-	if (!container->fake_proc_pid1_ns) {
+	// mount /proc - skip if fake_proc_pid1_ns or hidepid=3 is enabled.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
@@ -334,8 +334,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/sys", container->container_dir);
 		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount binfmt_misc - skip if fake_proc_pid1_ns is enabled since /proc is not mounted.
-	if (!container->fake_proc_pid1_ns) {
+	// Mount binfmt_misc - skip if fake_proc_pid1_ns or hidepid=3 is enabled since /proc is not mounted.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
 		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
@@ -619,8 +619,8 @@ static void copy_fakepid_library(struct RURI_CONTAINER *container)
 	 * The library is embedded in the ruri binary and extracted at runtime
 	 * to avoid needing separate library files.
 	 */
-	// If -1 is not set, return.
-	if (!container->fake_proc_pid1_ns) {
+	// If -1 or -i 3 is not set, return.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
 		return;
 	}
 	
@@ -826,7 +826,7 @@ static void hidepid(int stat)
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
 	} else if (stat == 3) {
 		// hidepid=3 is handled by setup_fake_proc_complete() for full PID isolation
-		// This requires fake_proc_pid1_ns to be enabled (-1 flag)
+		// This includes all -1 functionality (fake /proc entries and LD_PRELOAD)
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
 	}
 }
@@ -867,7 +867,7 @@ static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull conta
 {
 	/*
 	 * Create a complete fake /proc filesystem with PID isolation.
-	 * This is used when hidepid=3 is set with -1 flag.
+	 * This is used when hidepid=3 is set (which includes all -1 functionality).
 	 * 
 	 * This provides the same level of PID isolation as unshare --pid
 	 * but WITHOUT requiring kernel PID namespace support.
@@ -1121,7 +1121,7 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	// Hide pid.
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns) {
+	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
 		if (container->hidepid == 3) {
 			setup_fake_proc_complete(container, getpid(), container->hidepid);
 		} else {
@@ -1257,7 +1257,7 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	// Hide pid.
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns) {
+	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
 		if (container->hidepid == 3) {
 			setup_fake_proc_complete(container, getpid(), container->hidepid);
 		} else {
