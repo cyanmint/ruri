@@ -97,9 +97,9 @@ jobs:
           
           # Prepare environment variables for the build script
           cat > "$ARCHITECTURE/build_env.sh" << 'EOF'
-export GITHUB_REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
-export GITHUB_SHA="${{ github.sha }}"
-EOF
+          export GITHUB_REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
+          export GITHUB_SHA="${{ github.sha }}"
+          EOF
           
           cp build.sh "$ARCHITECTURE/build.sh"
           sudo chmod +x ../ruri
