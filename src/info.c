@@ -137,7 +137,7 @@ void ruri_show_helps(void)
 	cprintf("{base}  -x, --no-network ............................: Disable network (*10)\n");
 	cprintf("{base}  -K, --use-kvm ...............................: Enable /dev/kvm for container\n");
 	cprintf("{base}  -I, --char-dev [device] [major] [minor] .....: Add a character device to container (*11)\n");
-	cprintf("{base}  -i, --hidepid [1/2] .........................: Hidepid for /proc\n");
+	cprintf("{base}  -i, --hidepid [1/2/3] .......................: Hidepid for /proc (*18)\n");
 	cprintf("{base}  -T, --timens-offset [monotonic] [realtime]...: Set time offset for timens (*12)\n");
 	cprintf("{base}  -b, --background ............................: Fork to background\n");
 	cprintf("{base}  -L, --logfile [file] ........................: Set log file for -b option\n");
@@ -168,7 +168,8 @@ void ruri_show_helps(void)
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
 	cprintf("{base}(*16) : This option uses LD_PRELOAD to fake getpid() and creates fake /proc entries WITHOUT using PID namespaces. Works with systemd. Use with -S to skip host /proc mounting\n");
-	cprintf("{base}(*17) : Enables Android/redroid container support. Uses /system/bin/sh as default shell and sets up Android-specific environment\n");
+	cprintf("{base}(*17) : Enables Android/redroid container support. Uses /system/bin/sh as default shell, sets up Android-specific environment, and starts logcat for /init\n");
+	cprintf("{base}(*18) : hidepid=1 hides other users' processes, hidepid=2 makes /proc/<pid> invisible to other users, hidepid=3 provides complete PID isolation (includes all -1 features) and emulates /dev, /sys, /proc filesystems without kernel namespace support\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");

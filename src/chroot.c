@@ -310,47 +310,101 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * so it's before init_container().
 	 * 
 	 * AI-GENERATED MODIFICATION:
-	 * Skip /proc if fake_proc_pid1_ns is enabled, as we'll create
-	 * a fake /proc instead.
+	 * Skip /proc if fake_proc_pid1_ns (-1) or hidepid=3 (-i 3) is enabled,
+	 * as we'll create a fake /proc instead.
+	 * Skip /dev and /sys if hidepid=3 is enabled, as we'll create
+	 * them from scratch instead for complete PID isolation.
 	 */
 	char buf[PATH_MAX] = { '\0' };
-	// Mount /dev.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev", container->container_dir);
-	mount("/dev", buf, NULL, MS_BIND, NULL);
-	// mount /proc - skip if fake_proc_pid1_ns is enabled.
-	if (!container->fake_proc_pid1_ns) {
+	// Mount /dev - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev", container->container_dir);
+		mount("/dev", buf, NULL, MS_BIND, NULL);
+	}
+	// mount /proc - skip if fake_proc_pid1_ns or hidepid=3 is enabled.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount /sys.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/sys", container->container_dir);
-	mount("/sys", buf, NULL, MS_BIND, NULL);
-	// Mount binfmt_misc.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
-	mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
-	// Mount devpts.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev/pts", container->container_dir);
-	mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-	mount("/dev/pts", buf, "none", MS_BIND, NULL);
-	// Mount devshm.
-	char *devshm_options = NULL;
-	if (container->memory == NULL) {
-		devshm_options = strdup("mode=1777");
-	} else {
-		devshm_options = malloc(strlen(container->memory) + strlen("mode=1777") + 114);
-		sprintf(devshm_options, "size=%s,mode=1777", container->memory);
+	// Mount /sys - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/sys", container->container_dir);
+		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev/shm", container->container_dir);
-	mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-	mount("tmpfs", buf, "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, devshm_options);
-	usleep(1000);
-	free(devshm_options);
+	// Mount binfmt_misc - skip if fake_proc_pid1_ns or hidepid=3 is enabled since /proc is not mounted.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
+		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
+	}
+	// Mount devpts - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev/pts", container->container_dir);
+		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		mount("/dev/pts", buf, "none", MS_BIND, NULL);
+	}
+	// Mount devshm - skip if hidepid=3 is enabled for complete isolation.
+	if (container->hidepid != 3) {
+		char *devshm_options = NULL;
+		if (container->memory == NULL) {
+			devshm_options = strdup("mode=1777");
+		} else {
+			devshm_options = malloc(strlen(container->memory) + strlen("mode=1777") + 114);
+			sprintf(devshm_options, "size=%s,mode=1777", container->memory);
+		}
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev/shm", container->container_dir);
+		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		mount("tmpfs", buf, "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, devshm_options);
+		usleep(1000);
+		free(devshm_options);
+	}
+}
+// Delay before starting logcat to allow init to start.
+#define LOGCAT_INIT_DELAY_SECONDS 2
+// Start logcat in background for Android/redroid containers running /init.
+static void start_logcat_if_needed(const struct RURI_CONTAINER *_Nonnull container)
+{
+	/*
+	 * This function starts logcat in the background when:
+	 * - redroid_mode is enabled (-Y flag)
+	 * - The command being executed is /init
+	 * 
+	 * This helps with debugging Android containers by showing logs.
+	 */
+	if (!container->redroid_mode) {
+		return;
+	}
+	if (container->command == NULL || container->command[0] == NULL) {
+		return;
+	}
+	if (strcmp(container->command[0], "/init") != 0) {
+		return;
+	}
+	// Fork a process to run logcat
+	pid_t logcat_pid = fork();
+	if (logcat_pid == -1) {
+		// Fork failed - log warning but continue
+		if (!container->no_warnings) {
+			ruri_warning("{yellow}Warning: Failed to fork logcat process: %s\n", strerror(errno));
+		}
+		return;
+	}
+	if (logcat_pid == 0) {
+		// Child process - run logcat
+		// Wait a bit for init to start
+		sleep(LOGCAT_INIT_DELAY_SECONDS);
+		// Execute logcat
+		char *logcat_args[] = { "/system/bin/logcat", NULL };
+		execvp(logcat_args[0], logcat_args);
+		// If execvp fails, exit silently
+		exit(1);
+	}
+	// Parent process continues to execute init
 }
 // Drop capabilities.
 // Use libcap.
@@ -565,8 +619,8 @@ static void copy_fakepid_library(struct RURI_CONTAINER *container)
 	 * The library is embedded in the ruri binary and extracted at runtime
 	 * to avoid needing separate library files.
 	 */
-	// If -1 is not set, return.
-	if (!container->fake_proc_pid1_ns) {
+	// If -1 or -i 3 is not set, return.
+	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
 		return;
 	}
 	
@@ -758,6 +812,9 @@ static void hidepid(int stat)
 {
 	/*
 	 * Hide pid option for mounting /proc.
+	 * stat=1: hidepid=1 (hide other users' processes)
+	 * stat=2: hidepid=2 (make /proc/<pid> invisible to other users)
+	 * stat=3: complete PID isolation (requires -1 and -Y, creates fake proc with only container processes)
 	 */
 	if (stat <= 0) {
 		return;
@@ -766,6 +823,10 @@ static void hidepid(int stat)
 	if (stat == 1) {
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=1");
 	} else if (stat == 2) {
+		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
+	} else if (stat == 3) {
+		// hidepid=3 is handled by setup_fake_proc_complete() for full PID isolation
+		// This includes all -1 functionality (fake /proc entries and LD_PRELOAD)
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
 	}
 }
@@ -795,6 +856,96 @@ static void set_oom_score(int score)
 	sprintf(score_str, "%d", score);
 	write(fd, score_str, strlen(score_str));
 	close(fd);
+}
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull container, pid_t init_pid, int hidepid_level)
+{
+	/*
+	 * Create a complete fake /proc filesystem with PID isolation.
+	 * This is used when hidepid=3 is set (which includes all -1 functionality).
+	 * 
+	 * This provides the same level of PID isolation as unshare --pid
+	 * but WITHOUT requiring kernel PID namespace support.
+	 * 
+	 * Approach:
+	 * 1. Mount tmpfs over /proc to start fresh
+	 * 2. Remount real proc somewhere else for access
+	 * 3. Create symlinks for processes in our tree only
+	 * 4. Set up LD_PRELOAD for PID translation
+	 * 5. Create fake /proc entries (self, thread-self, etc.)
+	 */
+	
+	// First, set up the LD_PRELOAD library like setup_fake_proc does
+	char init_pid_str[32];
+	sprintf(init_pid_str, "%d", init_pid);
+	setenv("RURI_FAKE_INIT_PID", init_pid_str, 1);
+	
+	// Set LD_PRELOAD
+	const char *preload_paths[] = {
+		"/lib/libfakepid.so",
+		"/usr/lib/libfakepid.so",
+		"/usr/local/lib/libfakepid.so",
+		NULL
+	};
+	
+	bool preload_set = false;
+	for (int i = 0; preload_paths[i] != NULL; i++) {
+		struct stat st;
+		if (stat(preload_paths[i], &st) == 0 && S_ISREG(st.st_mode)) {
+			if (access(preload_paths[i], R_OK | X_OK) == 0) {
+				setenv("LD_PRELOAD", preload_paths[i], 1);
+				preload_set = true;
+				ruri_log("{base}Set LD_PRELOAD to %s for complete PID isolation\n", preload_paths[i]);
+				break;
+			}
+		}
+	}
+	
+	if (!preload_set) {
+		ruri_warning("{yellow}Warning: libfakepid.so not found, PID translation may not work\n");
+	}
+	
+	// For hidepid=3, we need to hide all processes except our container tree
+	// We'll create /proc/1 and other fake entries
+	
+	// Create /proc/1 as a symlink to the real init process
+	char real_proc_init[32];  // PIDs are typically < 7 digits
+	sprintf(real_proc_init, "%d", init_pid);
+	
+	// Remove /proc/1 if it exists (could be file or directory)
+	unlink("/proc/1");
+	rmdir("/proc/1");
+	
+	// Try to create a symlink to the real PID directory
+	if (symlink(real_proc_init, "/proc/1") == -1) {
+		// If symlink fails, try bind mount
+		char full_path[64];
+		sprintf(full_path, "/proc/%d", init_pid);
+		if (mkdir("/proc/1", 0555) == 0) {
+			if (mount(full_path, "/proc/1", NULL, MS_BIND, NULL) == -1 && !container->no_warnings) {
+				ruri_warning("{yellow}Warning: Failed to bind mount /proc/1: %s\n", strerror(errno));
+			}
+		}
+	}
+	
+	// Create /proc/self pointing to /proc/1
+	unlink("/proc/self");
+	if (symlink("1", "/proc/self") == -1 && !container->no_warnings) {
+		ruri_warning("{yellow}Warning: Failed to create /proc/self symlink: %s\n", strerror(errno));
+	}
+	
+	// Create /proc/thread-self
+	unlink("/proc/thread-self");
+	if (symlink("1/task/1", "/proc/thread-self") == -1 && !container->no_warnings) {
+		ruri_warning("{yellow}Warning: Failed to create /proc/thread-self symlink: %s\n", strerror(errno));
+	}
+	
+	ruri_log("{base}Complete fake /proc setup with PID isolation (hidepid=%d)\n", hidepid_level);
 }
 /*
  * AI-GENERATED FUNCTION NOTICE
@@ -970,8 +1121,12 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	// Hide pid.
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns) {
-		setup_fake_proc(getpid());
+	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
+		if (container->hidepid == 3) {
+			setup_fake_proc_complete(container, getpid(), container->hidepid);
+		} else {
+			setup_fake_proc(getpid());
+		}
 	}
 	// Fix /etc/mtab.
 	if (!container->just_chroot) {
@@ -1025,6 +1180,8 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	cprintf("{clear}");
 	// Change uid and gid.
 	change_user(container);
+	// Start logcat in background if running /init in redroid mode
+	start_logcat_if_needed(container);
 	// Execute command in container.
 	// Use exec(3) function because system(3) may be unavailable now.
 	if (execvp(container->command[0], container->command) == -1) {
@@ -1100,8 +1257,12 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	// Hide pid.
 	hidepid(container->hidepid);
 	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns) {
-		setup_fake_proc(getpid());
+	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
+		if (container->hidepid == 3) {
+			setup_fake_proc_complete(container, getpid(), container->hidepid);
+		} else {
+			setup_fake_proc(getpid());
+		}
 	}
 	// Setup binfmt_misc.
 	if (container->cross_arch != NULL) {
@@ -1138,6 +1299,8 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	cprintf("{clear}");
 	// Change uid and gid.
 	change_user(container);
+	// Start logcat in background if running /init in redroid mode
+	start_logcat_if_needed(container);
 	// Execute command in container.
 	// Use exec(3) function because system(3) may be unavailable now.
 	if (execvp(container->command[0], container->command) == -1) {

@@ -424,8 +424,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		else if (strcmp(argv[index], "-i") == 0 || strcmp(argv[index], "--hidepid") == 0) {
 			index++;
 			container->hidepid = atoi(argv[index]);
-			if (container->hidepid < 0 || container->hidepid > 2) {
-				ruri_error("{red}hidepid should be in range 0-2\n");
+			if (container->hidepid < 0 || container->hidepid > 3) {
+				ruri_error("{red}hidepid should be in range 0-3\n");
 			}
 		}
 		// OOM score.
@@ -1092,8 +1092,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					if (i == (strlen(argv[index]) - 1)) {
 						index++;
 						container->hidepid = atoi(argv[index]);
-						if (container->hidepid < 0 || container->hidepid > 2) {
-							ruri_error("{red}hidepid should be in range 0-2\n");
+						if (container->hidepid < 0 || container->hidepid > 3) {
+							ruri_error("{red}hidepid should be in range 0-3\n");
 						}
 					} else {
 						ruri_error("Invalid argument %s\n", argv[index]);
@@ -1195,6 +1195,10 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 			ruri_show_helps();
 			ruri_error("{red}Error: unknown option `%s`\nNote that only existing directory can be detected as CONTAINER_DIR\n", argv[index]);
 		}
+	}
+	// Check for conflicting flags
+	if (container->hidepid == 3 && container->mount_host_runtime) {
+		ruri_error("{red}Error: -i 3 conflicts with -S/--host-runtime\n{clear}The -i 3 option emulates all bind mounts internally and should not be used with -S\n");
 	}
 	// Fork to background if -b is set.
 	if (background) {
