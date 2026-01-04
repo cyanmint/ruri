@@ -387,7 +387,12 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 		return;
 	}
 	
-	snprintf(proc_mount, PATH_MAX, "%s/proc", container_dir);
+	// If container_dir is "/", we're already inside the container
+	if (strcmp(container_dir, "/") == 0) {
+		snprintf(proc_mount, PATH_MAX, "/proc");
+	} else {
+		snprintf(proc_mount, PATH_MAX, "%s/proc", container_dir);
+	}
 	
 	// Ensure the directory exists
 	if (access(proc_mount, F_OK) != 0) {
