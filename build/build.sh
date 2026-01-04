@@ -30,12 +30,19 @@ COMMIT_SHA="${GITHUB_SHA:-}"
 # For PRs, use head_ref; for direct pushes, use ref_name
 BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-}}"
 
+# Remove refs/heads/ or refs/pull/ prefix if present
+BRANCH_NAME="${BRANCH_NAME#refs/heads/}"
+BRANCH_NAME="${BRANCH_NAME#refs/pull/}"
+
 if [ -n "$COMMIT_SHA" ]; then
     # Clone with specific branch if available, otherwise all branches
     echo "Cloning from $REPO_URL and checking out $COMMIT_SHA"
     if [ -n "$BRANCH_NAME" ]; then
         echo "Using branch: $BRANCH_NAME"
-        git clone -b "$BRANCH_NAME" "$REPO_URL" ruri || git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
+        git clone -b "$BRANCH_NAME" "$REPO_URL" ruri 2>/dev/null || {
+            echo "Branch clone failed, trying --no-single-branch"
+            git clone --no-single-branch "$REPO_URL" ruri 2>/dev/null || git clone "$REPO_URL" ruri
+        }
     else
         git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
     fi
