@@ -863,7 +863,7 @@ static void set_oom_score(int score)
  * This function was generated with the assistance of AI (GitHub Copilot).
  * Users should verify its correctness before use.
  */
-static void setup_fake_proc_complete(pid_t init_pid, int hidepid_level)
+static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull container, pid_t init_pid, int hidepid_level)
 {
 	/*
 	 * Create a complete fake /proc filesystem with PID isolation.
@@ -914,29 +914,35 @@ static void setup_fake_proc_complete(pid_t init_pid, int hidepid_level)
 	// We'll create /proc/1 and other fake entries
 	
 	// Create /proc/1 as a symlink to the real init process
-	char real_proc_init[PATH_MAX];
+	char real_proc_init[32];  // PIDs are typically < 7 digits
 	sprintf(real_proc_init, "%d", init_pid);
 	
-	// Remove /proc/1 if it exists
-	rmdir("/proc/1");
+	// Remove /proc/1 if it exists (could be file or directory)
 	unlink("/proc/1");
+	rmdir("/proc/1");
 	
-	// Create symlink to the real PID directory
+	// Try to create a symlink to the real PID directory
 	if (symlink(real_proc_init, "/proc/1") == -1) {
 		// If symlink fails, try bind mount
-		char full_path[PATH_MAX];
+		char full_path[64];
 		sprintf(full_path, "/proc/%d", init_pid);
-		mkdir("/proc/1", 0555);
-		mount(full_path, "/proc/1", NULL, MS_BIND, NULL);
+		if (mkdir("/proc/1", 0555) == 0) {
+			if (mount(full_path, "/proc/1", NULL, MS_BIND, NULL) == -1 && !container->no_warnings) {
+				ruri_warning("{yellow}Warning: Failed to bind mount /proc/1: %s\n", strerror(errno));
+			}
+		}
 	}
 	
 	// Create /proc/self pointing to /proc/1
 	unlink("/proc/self");
-	symlink("1", "/proc/self");
+	if (symlink("1", "/proc/self") == -1 && !container->no_warnings) {
+		ruri_warning("{yellow}Warning: Failed to create /proc/self symlink: %s\n", strerror(errno));
+	}
 	
 	// Create /proc/thread-self
-	if (access("/proc/thread-self", F_OK) != 0) {
-		symlink("1/task/1", "/proc/thread-self");
+	unlink("/proc/thread-self");
+	if (symlink("1/task/1", "/proc/thread-self") == -1 && !container->no_warnings) {
+		ruri_warning("{yellow}Warning: Failed to create /proc/thread-self symlink: %s\n", strerror(errno));
 	}
 	
 	ruri_log("{base}Complete fake /proc setup with PID isolation (hidepid=%d)\n", hidepid_level);
@@ -1117,7 +1123,7 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	// Fake /proc for pid1 namespace.
 	if (container->fake_proc_pid1_ns) {
 		if (container->hidepid == 3) {
-			setup_fake_proc_complete(getpid(), container->hidepid);
+			setup_fake_proc_complete(container, getpid(), container->hidepid);
 		} else {
 			setup_fake_proc(getpid());
 		}
@@ -1253,7 +1259,7 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	// Fake /proc for pid1 namespace.
 	if (container->fake_proc_pid1_ns) {
 		if (container->hidepid == 3) {
-			setup_fake_proc_complete(getpid(), container->hidepid);
+			setup_fake_proc_complete(container, getpid(), container->hidepid);
 		} else {
 			setup_fake_proc(getpid());
 		}
