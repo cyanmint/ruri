@@ -797,12 +797,14 @@ int main(int argc, char **argv)
 		check_and_add_lib("-lseccomp", true);
 		check_and_add_lib("-lpthread", false);
 		// Add FUSE3 library support for -i 4 mode
-		if (!check_lib("-lfuse3")) {
-			// FUSE not available, disable FUSE support
-			check_and_add_cflag("-DDISABLE_FUSE", false);
-		} else {
+		// Try to link FUSE3, but gracefully degrade if unavailable
+		if (check_lib("-lfuse3")) {
 			// FUSE available, link against it
 			check_and_add_lib("-lfuse3", false);
+		} else {
+			// FUSE not available, disable FUSE support
+			check_and_add_cflag("-DDISABLE_FUSE", false);
+			printf("Warning: FUSE3 not found, -i 4 mode will be disabled\n");
 		}
 	} else {
 		check_and_add_cflag("-DRURI_CORE_ONLY", true);
