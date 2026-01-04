@@ -309,11 +309,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * This function will be called before chroot(2),
 	 * so it's before init_container().
 	 * 
-	 * AI-GENERATED MODIFICATION:
-	 * Skip /proc if fake_proc_pid1_ns (-1) or hidepid=3 (-i 3) is enabled,
-	 * as we'll create a fake /proc instead.
-	 * Skip /dev and /sys if hidepid=3 is enabled, as we'll create
-	 * them from scratch instead for complete PID isolation.
+	 * Skip /proc, /dev, and /sys if hidepid=3 (-i 3) is enabled,
+	 * as we'll create fake versions instead for complete PID isolation.
 	 */
 	char buf[PATH_MAX] = { '\0' };
 	// Mount /dev - skip if hidepid=3 is enabled for complete isolation.
@@ -322,8 +319,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/dev", container->container_dir);
 		mount("/dev", buf, NULL, MS_BIND, NULL);
 	}
-	// mount /proc - skip if fake_proc_pid1_ns or hidepid=3 is enabled.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// mount /proc - skip if hidepid=3 is enabled.
+	if (container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
@@ -334,8 +331,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		sprintf(buf, "%s/sys", container->container_dir);
 		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount binfmt_misc - skip if fake_proc_pid1_ns or hidepid=3 is enabled since /proc is not mounted.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// Mount binfmt_misc - skip if hidepid=3 is enabled since /proc is not mounted.
+	if (container->hidepid != 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
 		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
@@ -619,8 +616,8 @@ static void copy_fakepid_library(struct RURI_CONTAINER *container)
 	 * The library is embedded in the ruri binary and extracted at runtime
 	 * to avoid needing separate library files.
 	 */
-	// If -1 or -i 3 is not set, return.
-	if (!container->fake_proc_pid1_ns && container->hidepid != 3) {
+	// If -i 3 is not set, return.
+	if (container->hidepid != 3) {
 		return;
 	}
 	
@@ -947,77 +944,6 @@ static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull conta
 	
 	ruri_log("{base}Complete fake /proc setup with PID isolation (hidepid=%d)\n", hidepid_level);
 }
-/*
- * AI-GENERATED FUNCTION NOTICE
- * 
- * This function was generated with the assistance of AI (GitHub Copilot).
- * Users should verify its correctness before use.
- */
-static void setup_fake_proc(pid_t init_pid)
-{
-	/*
-	 * Create a fake /proc filesystem that makes the init process appear as PID 1.
-	 * 
-	 * This does NOT use PID namespaces. Instead, it uses LD_PRELOAD to intercept
-	 * getpid() calls and creates /proc/1 entries to fool programs.
-	 * 
-	 * Approach:
-	 * 1. Set RURI_FAKE_INIT_PID environment variable
-	 * 2. Set LD_PRELOAD to load libfakepid.so (only if it exists and is accessible)
-	 * 3. Create /proc/1 as a symlink to /proc/<real_init_pid>
-	 */
-	
-	// Set environment variable for LD_PRELOAD library
-	char init_pid_str[32];
-	sprintf(init_pid_str, "%d", init_pid);
-	setenv("RURI_FAKE_INIT_PID", init_pid_str, 1);
-	
-	// Set LD_PRELOAD - the library should be at /lib/libfakepid.so in container
-	// This will be copied there during container setup
-	// Only set if the library exists and is a regular file
-	const char *preload_paths[] = {
-		"/lib/libfakepid.so",
-		"/usr/lib/libfakepid.so",
-		"/usr/local/lib/libfakepid.so",
-		NULL
-	};
-	
-	bool preload_set = false;
-	for (int i = 0; preload_paths[i] != NULL; i++) {
-		struct stat st;
-		if (stat(preload_paths[i], &st) == 0 && S_ISREG(st.st_mode)) {
-			// Verify the file is readable and executable
-			if (access(preload_paths[i], R_OK | X_OK) == 0) {
-				setenv("LD_PRELOAD", preload_paths[i], 1);
-				preload_set = true;
-				ruri_log("{base}Set LD_PRELOAD to %s\n", preload_paths[i]);
-				break;
-			}
-		}
-	}
-	
-	if (!preload_set) {
-		ruri_log("{base}Warning: libfakepid.so not found, fake PID may not work for all programs\n");
-	}
-	
-	// Create /proc/1 as a symlink to the real init process
-	char real_proc_init[PATH_MAX];
-	sprintf(real_proc_init, "%d", init_pid);
-	
-	// Remove /proc/1 if it exists
-	rmdir("/proc/1");
-	unlink("/proc/1");
-	
-	// Try to create a symlink to the real PID directory
-	// This makes /proc/1 point to /proc/<real_init_pid>
-	if (symlink(real_proc_init, "/proc/1") == -1) {
-		// If symlink fails, try bind mount
-		char full_path[PATH_MAX];
-		sprintf(full_path, "/proc/%d", init_pid);
-		mkdir("/proc/1", 0555);
-		mount(full_path, "/proc/1", NULL, MS_BIND, NULL);
-	}
-}
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 {
@@ -1120,13 +1046,9 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
-		if (container->hidepid == 3) {
-			setup_fake_proc_complete(container, getpid(), container->hidepid);
-		} else {
-			setup_fake_proc(getpid());
-		}
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Fix /etc/mtab.
 	if (!container->just_chroot) {
@@ -1256,13 +1178,9 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace.
-	if (container->fake_proc_pid1_ns || container->hidepid == 3) {
-		if (container->hidepid == 3) {
-			setup_fake_proc_complete(container, getpid(), container->hidepid);
-		} else {
-			setup_fake_proc(getpid());
-		}
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Setup binfmt_misc.
 	if (container->cross_arch != NULL) {
