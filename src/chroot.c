@@ -310,47 +310,59 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * so it's before init_container().
 	 * 
 	 * AI-GENERATED MODIFICATION:
-	 * Skip /proc if fake_proc_pid1_ns is enabled, as we'll create
+	 * Skip /proc if fake_proc_pid1_ns (-1) is enabled, as we'll create
 	 * a fake /proc instead.
+	 * Skip /dev and /sys if redroid_mode (-Y) is enabled, as we'll create
+	 * them from scratch instead.
 	 */
 	char buf[PATH_MAX] = { '\0' };
-	// Mount /dev.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev", container->container_dir);
-	mount("/dev", buf, NULL, MS_BIND, NULL);
+	// Mount /dev - skip if redroid_mode is enabled.
+	if (!container->redroid_mode) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev", container->container_dir);
+		mount("/dev", buf, NULL, MS_BIND, NULL);
+	}
 	// mount /proc - skip if fake_proc_pid1_ns is enabled.
 	if (!container->fake_proc_pid1_ns) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount /sys.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/sys", container->container_dir);
-	mount("/sys", buf, NULL, MS_BIND, NULL);
-	// Mount binfmt_misc.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
-	mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
-	// Mount devpts.
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev/pts", container->container_dir);
-	mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-	mount("/dev/pts", buf, "none", MS_BIND, NULL);
-	// Mount devshm.
-	char *devshm_options = NULL;
-	if (container->memory == NULL) {
-		devshm_options = strdup("mode=1777");
-	} else {
-		devshm_options = malloc(strlen(container->memory) + strlen("mode=1777") + 114);
-		sprintf(devshm_options, "size=%s,mode=1777", container->memory);
+	// Mount /sys - skip if redroid_mode is enabled.
+	if (!container->redroid_mode) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/sys", container->container_dir);
+		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	memset(buf, '\0', sizeof(buf));
-	sprintf(buf, "%s/dev/shm", container->container_dir);
-	mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-	mount("tmpfs", buf, "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, devshm_options);
-	usleep(1000);
-	free(devshm_options);
+	// Mount binfmt_misc - skip if fake_proc_pid1_ns is enabled since /proc is not mounted.
+	if (!container->fake_proc_pid1_ns) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
+		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
+	}
+	// Mount devpts - skip if redroid_mode is enabled.
+	if (!container->redroid_mode) {
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev/pts", container->container_dir);
+		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		mount("/dev/pts", buf, "none", MS_BIND, NULL);
+	}
+	// Mount devshm - skip if redroid_mode is enabled.
+	if (!container->redroid_mode) {
+		char *devshm_options = NULL;
+		if (container->memory == NULL) {
+			devshm_options = strdup("mode=1777");
+		} else {
+			devshm_options = malloc(strlen(container->memory) + strlen("mode=1777") + 114);
+			sprintf(devshm_options, "size=%s,mode=1777", container->memory);
+		}
+		memset(buf, '\0', sizeof(buf));
+		sprintf(buf, "%s/dev/shm", container->container_dir);
+		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		mount("tmpfs", buf, "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, devshm_options);
+		usleep(1000);
+		free(devshm_options);
+	}
 }
 // Drop capabilities.
 // Use libcap.
@@ -1025,6 +1037,22 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	cprintf("{clear}");
 	// Change uid and gid.
 	change_user(container);
+	// Start logcat in background if running /init in redroid mode
+	if (container->redroid_mode && container->command[0] != NULL && strcmp(container->command[0], "/init") == 0) {
+		// Fork a process to run logcat
+		pid_t logcat_pid = fork();
+		if (logcat_pid == 0) {
+			// Child process - run logcat
+			// Wait a bit for init to start
+			sleep(2);
+			// Execute logcat
+			char *logcat_args[] = { "/system/bin/logcat", NULL };
+			execvp(logcat_args[0], logcat_args);
+			// If execvp fails, exit silently
+			exit(1);
+		}
+		// Parent process continues to execute init
+	}
 	// Execute command in container.
 	// Use exec(3) function because system(3) may be unavailable now.
 	if (execvp(container->command[0], container->command) == -1) {
@@ -1138,6 +1166,22 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	cprintf("{clear}");
 	// Change uid and gid.
 	change_user(container);
+	// Start logcat in background if running /init in redroid mode
+	if (container->redroid_mode && container->command[0] != NULL && strcmp(container->command[0], "/init") == 0) {
+		// Fork a process to run logcat
+		pid_t logcat_pid = fork();
+		if (logcat_pid == 0) {
+			// Child process - run logcat
+			// Wait a bit for init to start
+			sleep(2);
+			// Execute logcat
+			char *logcat_args[] = { "/system/bin/logcat", NULL };
+			execvp(logcat_args[0], logcat_args);
+			// If execvp fails, exit silently
+			exit(1);
+		}
+		// Parent process continues to execute init
+	}
 	// Execute command in container.
 	// Use exec(3) function because system(3) may be unavailable now.
 	if (execvp(container->command[0], container->command) == -1) {

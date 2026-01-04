@@ -1196,6 +1196,10 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 			ruri_error("{red}Error: unknown option `%s`\nNote that only existing directory can be detected as CONTAINER_DIR\n", argv[index]);
 		}
 	}
+	// Check for conflicting flags
+	if (container->redroid_mode && container->mount_host_runtime) {
+		ruri_error("{red}Error: -Y/--redroid conflicts with -S/--host-runtime\n{clear}The -Y flag emulates all bind mounts internally and should not be used with -S\n");
+	}
 	// Fork to background if -b is set.
 	if (background) {
 		// One more fork().
