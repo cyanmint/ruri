@@ -795,11 +795,15 @@ int main(int argc, char **argv)
 	if (!core_only) {
 		check_and_add_lib("-lcap", true);
 		check_and_add_lib("-lseccomp", true);
+		// pthread is required for FUSE3, ensure it's available
 		check_and_add_lib("-lpthread", false);
 		// Add FUSE3 library support for -i 4 mode
+		// FUSE3 requires pthread, so we check after pthread is added
 		// Try to link FUSE3, but gracefully degrade if unavailable
+		printf("Checking for FUSE3 library support...\n");
 		if (check_lib("-lfuse3")) {
 			// FUSE available, link against it
+			printf("FUSE3 found, enabling -i 4 mode support\n");
 			check_and_add_lib("-lfuse3", false);
 		} else {
 			// FUSE not available, disable FUSE support
