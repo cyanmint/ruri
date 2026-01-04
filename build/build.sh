@@ -29,15 +29,25 @@ REPO_URL="${GITHUB_REPOSITORY_URL:-https://github.com/moe-hacker/ruri.git}"
 COMMIT_SHA="${GITHUB_SHA:-}"
 
 if [ -n "$COMMIT_SHA" ]; then
-    # Clone the specific commit
-    git clone "$REPO_URL" ruri
+    # Clone with all branches and checkout the specific commit
+    echo "Cloning from $REPO_URL and checking out $COMMIT_SHA"
+    git clone --no-single-branch "$REPO_URL" ruri || git clone "$REPO_URL" ruri
     cd ruri
-    git checkout "$COMMIT_SHA"
+    git checkout "$COMMIT_SHA" 2>/dev/null || {
+        echo "Failed to checkout $COMMIT_SHA, trying to fetch it"
+        git fetch origin "$COMMIT_SHA" 2>/dev/null || true
+        git checkout "$COMMIT_SHA" 2>/dev/null || {
+            echo "Warning: Could not checkout $COMMIT_SHA, using current HEAD"
+            git checkout HEAD
+        }
+    }
 else
     # Fallback to shallow clone of default branch
     git clone --depth 1 "$REPO_URL" ruri
     cd ruri
 fi
+
+echo "Building from commit: $(git rev-parse --short HEAD)"
 
 cc build.c -o build-ruri
 ./build-ruri -s -f
