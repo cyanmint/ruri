@@ -424,8 +424,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		else if (strcmp(argv[index], "-i") == 0 || strcmp(argv[index], "--hidepid") == 0) {
 			index++;
 			container->hidepid = atoi(argv[index]);
-			if (container->hidepid < 0 || container->hidepid > 2) {
-				ruri_error("{red}hidepid should be in range 0-2\n");
+			if (container->hidepid < 0 || container->hidepid > 4) {
+				ruri_error("{red}hidepid should be in range 0-4\n");
 			}
 		}
 		// OOM score.
@@ -1088,8 +1088,8 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					if (i == (strlen(argv[index]) - 1)) {
 						index++;
 						container->hidepid = atoi(argv[index]);
-						if (container->hidepid < 0 || container->hidepid > 2) {
-							ruri_error("{red}hidepid should be in range 0-2\n");
+						if (container->hidepid < 0 || container->hidepid > 4) {
+							ruri_error("{red}hidepid should be in range 0-4\n");
 						}
 					} else {
 						ruri_error("Invalid argument %s\n", argv[index]);

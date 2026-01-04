@@ -398,10 +398,27 @@ Note: For security reasons, creating block devices is not supported. You can use
 
 | Option | Description |
 |--------|-------------|
-| `-i`, `--hidepid 1/2` | Hidepid for /proc |
+| `-i`, `--hidepid 0/1/2/3/4` | PID isolation and hidepid for /proc |
 
-Hidepid option for `/proc`.  
-For more info, refer to the man page of `proc(5)`.
+PID isolation and hidepid option for `/proc`:
+- `0`: No isolation (default)
+- `1`: hidepid=1 for /proc (hide other users' processes)
+- `2`: hidepid=2 for /proc (hide all other processes)
+- `3`: Use ptrace to virtualize PIDs (first process sees itself as PID 1)
+- `4`: Use FUSE to emulate /proc, /sys, /dev with PID virtualization
+
+**For `-i 3` mode:**
+- Uses ptrace to intercept PID-related syscalls
+- The first process in the container thinks it's PID 1
+- All processes see a fake PID hierarchy
+
+**For `-i 4` mode:**
+- Includes all features from `-i 3` mode
+- Additionally mounts FUSE filesystems for /proc, /sys, /dev
+- Provides complete filesystem-level virtualization
+- Requires FUSE support (libfuse3)
+
+For more info on hidepid 1/2, refer to the man page of `proc(5)`.
 
 ---
 

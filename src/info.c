@@ -137,7 +137,7 @@ void ruri_show_helps(void)
 	cprintf("{base}  -x, --no-network ............................: Disable network (*10)\n");
 	cprintf("{base}  -K, --use-kvm ...............................: Enable /dev/kvm for container\n");
 	cprintf("{base}  -I, --char-dev [device] [major] [minor] .....: Add a character device to container (*11)\n");
-	cprintf("{base}  -i, --hidepid [1/2] .........................: Hidepid for /proc\n");
+	cprintf("{base}  -i, --hidepid [0/1/2/3/4] ...................: PID isolation/hidepid for /proc (*16)\n");
 	cprintf("{base}  -T, --timens-offset [monotonic] [realtime]...: Set time offset for timens (*12)\n");
 	cprintf("{base}  -b, --background ............................: Fork to background\n");
 	cprintf("{base}  -L, --logfile [file] ........................: Set log file for -b option\n");
@@ -165,6 +165,7 @@ void ruri_show_helps(void)
 	cprintf("{base}(*13) : This can only be used when the `-N` option is enabled\n");
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
+	cprintf("{base}(*16) : 0=no isolation, 1/2=hidepid, 3=ptrace PID virtualization, 4=FUSE+ptrace virtualization\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");

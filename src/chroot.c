@@ -645,6 +645,9 @@ static void hidepid(int stat)
 {
 	/*
 	 * Hide pid option for mounting /proc.
+	 * stat 0-2: standard hidepid values
+	 * stat 3: ptrace-based PID virtualization
+	 * stat 4: FUSE-based filesystem virtualization
 	 */
 	if (stat <= 0) {
 		return;
@@ -654,6 +657,13 @@ static void hidepid(int stat)
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=1");
 	} else if (stat == 2) {
 		mount("none", "/proc", "proc", MS_REMOUNT, "hidepid=2");
+	} else if (stat == 3) {
+		// Ptrace-based PID virtualization
+		ruri_init_ptrace_pid();
+	} else if (stat == 4) {
+		// FUSE-based filesystem virtualization
+		// Note: FUSE initialization happens in parent before chroot
+		ruri_init_ptrace_pid();
 	}
 }
 static void set_oom_score(int score)

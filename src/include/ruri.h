@@ -304,6 +304,12 @@ int ruri_get_groups(uid_t uid, gid_t groups[]);
 int ruri_cap_from_name(const char *str, cap_value_t *cap);
 #endif
 void ruri_clear_env(char *const *_Nonnull argv);
+// Ptrace-based PID virtualization (for -i 3)
+void ruri_ptrace_pid_wrapper(pid_t child_pid);
+void ruri_init_ptrace_pid(void);
+void ruri_cleanup_ptrace_pid(void);
+// FUSE-based filesystem virtualization (for -i 4)
+void ruri_init_fuse_fs(const char *_Nonnull container_dir, pid_t base_pid);
 // Bionic does not have memfd_create()
 #ifdef __ANDROID__
 #define memfd_create(...) syscall(SYS_memfd_create, __VA_ARGS__)
