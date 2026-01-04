@@ -229,7 +229,7 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 		if (ptrace(PTRACE_SYSCALL, child_pid, 0, 0) == -1) {
 			int save_errno = errno;
 			if (save_errno != ESRCH) {
-				ruri_warning("{yellow}PTRACE_SYSCALL failed: %s\n", strerror(save_errno));
+				ruri_warning("{yellow}PTRACE_SYSCALL failed for PID %d: %s\n", child_pid, strerror(save_errno));
 			}
 			break;
 		}
@@ -237,7 +237,7 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 		if (waitpid(child_pid, &status, 0) == -1) {
 			int save_errno = errno;
 			if (save_errno != ECHILD) {
-				ruri_warning("{yellow}waitpid in loop failed: %s\n", strerror(save_errno));
+				ruri_warning("{yellow}waitpid failed for PID %d: %s\n", child_pid, strerror(save_errno));
 			}
 			break;
 		}

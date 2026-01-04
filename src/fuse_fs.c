@@ -378,8 +378,8 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	ruri_log("{base}Initializing FUSE filesystem virtualization (PID %d)\n", base_pid);
 	
 	proc_ctx.base_pid = base_pid;
-	strncpy(proc_ctx.container_dir, container_dir, sizeof(proc_ctx.container_dir) - 1);
-	proc_ctx.container_dir[sizeof(proc_ctx.container_dir) - 1] = '\0'; // Ensure null termination
+	// Use snprintf for safe string copying with guaranteed null termination
+	snprintf(proc_ctx.container_dir, sizeof(proc_ctx.container_dir), "%s", container_dir);
 	
 	// Create mount point for /proc
 	char proc_mount[PATH_MAX];
@@ -402,7 +402,7 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	// Allocate string for thread (will be freed by thread)
 	char *proc_mount_copy = strdup(proc_mount);
 	if (proc_mount_copy == NULL) {
-		ruri_warning("{yellow}Failed to allocate memory for mount point\n");
+		ruri_warning("{yellow}Failed to allocate memory for mount point: %s\n", proc_mount);
 		return;
 	}
 	
