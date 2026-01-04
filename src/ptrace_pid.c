@@ -47,13 +47,20 @@
 #include <sys/user.h>
 #endif
 
-#if defined(__aarch64__) || defined(__arm__)
-#include <linux/elf.h>
+#if defined(__aarch64__)
 #include <sys/uio.h>
+#include <asm/ptrace.h>
+// NT_PRSTATUS for PTRACE_GETREGSET/SETREGSET
+#ifndef NT_PRSTATUS
+#define NT_PRSTATUS 1
 #endif
-
+#elif defined(__arm__)
+#include <sys/uio.h>
+// NT_PRSTATUS for PTRACE_GETREGSET/SETREGSET
+#ifndef NT_PRSTATUS
+#define NT_PRSTATUS 1
+#endif
 // For musl libc compatibility - define user_regs if not available
-#ifdef __arm__
 #ifndef _SYS_USER_H
 struct user_regs {
     unsigned long uregs[18];
