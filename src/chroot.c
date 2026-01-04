@@ -364,6 +364,8 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 		free(devshm_options);
 	}
 }
+// Delay before starting logcat to allow init to start.
+#define LOGCAT_INIT_DELAY_SECONDS 2
 // Start logcat in background for Android/redroid containers running /init.
 static void start_logcat_if_needed(const struct RURI_CONTAINER *_Nonnull container)
 {
@@ -374,28 +376,35 @@ static void start_logcat_if_needed(const struct RURI_CONTAINER *_Nonnull contain
 	 * 
 	 * This helps with debugging Android containers by showing logs.
 	 */
-	if (container->redroid_mode && container->command[0] != NULL && strcmp(container->command[0], "/init") == 0) {
-		// Fork a process to run logcat
-		pid_t logcat_pid = fork();
-		if (logcat_pid == -1) {
-			// Fork failed - log warning but continue
-			if (!container->no_warnings) {
-				ruri_warning("{yellow}Warning: Failed to fork logcat process: %s\n", strerror(errno));
-			}
-			return;
-		}
-		if (logcat_pid == 0) {
-			// Child process - run logcat
-			// Wait a bit for init to start
-			sleep(2);
-			// Execute logcat
-			char *logcat_args[] = { "/system/bin/logcat", NULL };
-			execvp(logcat_args[0], logcat_args);
-			// If execvp fails, exit silently
-			exit(1);
-		}
-		// Parent process continues to execute init
+	if (!container->redroid_mode) {
+		return;
 	}
+	if (container->command == NULL || container->command[0] == NULL) {
+		return;
+	}
+	if (strcmp(container->command[0], "/init") != 0) {
+		return;
+	}
+	// Fork a process to run logcat
+	pid_t logcat_pid = fork();
+	if (logcat_pid == -1) {
+		// Fork failed - log warning but continue
+		if (!container->no_warnings) {
+			ruri_warning("{yellow}Warning: Failed to fork logcat process: %s\n", strerror(errno));
+		}
+		return;
+	}
+	if (logcat_pid == 0) {
+		// Child process - run logcat
+		// Wait a bit for init to start
+		sleep(LOGCAT_INIT_DELAY_SECONDS);
+		// Execute logcat
+		char *logcat_args[] = { "/system/bin/logcat", NULL };
+		execvp(logcat_args[0], logcat_args);
+		// If execvp fails, exit silently
+		exit(1);
+	}
+	// Parent process continues to execute init
 }
 // Drop capabilities.
 // Use libcap.
