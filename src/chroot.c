@@ -313,39 +313,39 @@ static void mount_host_runtime(const struct RURI_CONTAINER *_Nonnull container)
 	 * as we'll create fake versions instead for complete PID isolation.
 	 */
 	char buf[PATH_MAX] = { '\0' };
-	// Mount /dev - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount /dev - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev", container->container_dir);
 		mount("/dev", buf, NULL, MS_BIND, NULL);
 	}
-	// mount /proc - skip if hidepid=3 is enabled.
-	if (container->hidepid != 3) {
+	// mount /proc - skip if hidepid=3/4 is enabled.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc", container->container_dir);
 		mount("/proc", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount /sys - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount /sys - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/sys", container->container_dir);
 		mount("/sys", buf, NULL, MS_BIND, NULL);
 	}
-	// Mount binfmt_misc - skip if hidepid=3 is enabled since /proc is not mounted.
-	if (container->hidepid != 3) {
+	// Mount binfmt_misc - skip if hidepid=3/4 is enabled since /proc is not mounted.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/proc/sys/fs/binfmt_misc", container->container_dir);
 		mount("binfmt_misc", buf, "binfmt_misc", 0, NULL);
 	}
-	// Mount devpts - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount devpts - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		memset(buf, '\0', sizeof(buf));
 		sprintf(buf, "%s/dev/pts", container->container_dir);
 		mkdir(buf, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		mount("/dev/pts", buf, "none", MS_BIND, NULL);
 	}
-	// Mount devshm - skip if hidepid=3 is enabled for complete isolation.
-	if (container->hidepid != 3) {
+	// Mount devshm - skip if hidepid=3/4 is enabled for complete isolation.
+	if (container->hidepid < 3) {
 		char *devshm_options = NULL;
 		if (container->memory == NULL) {
 			devshm_options = strdup("mode=1777");
@@ -616,8 +616,8 @@ static void copy_fakepid_library(struct RURI_CONTAINER *container)
 	 * The library is embedded in the ruri binary and extracted at runtime
 	 * to avoid needing separate library files.
 	 */
-	// If -i 3 is not set, return.
-	if (container->hidepid != 3) {
+	// If -i 3 or -i 4 is not set, return.
+	if (container->hidepid < 3) {
 		return;
 	}
 	
@@ -1046,8 +1046,8 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace (hidepid=3).
-	if (container->hidepid == 3) {
+	// Fake /proc for pid1 namespace (hidepid=3/4).
+	if (container->hidepid >= 3) {
 		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Fix /etc/mtab.
@@ -1178,8 +1178,8 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace (hidepid=3).
-	if (container->hidepid == 3) {
+	// Fake /proc for pid1 namespace (hidepid=3/4).
+	if (container->hidepid >= 3) {
 		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Setup binfmt_misc.
