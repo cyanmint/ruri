@@ -28,6 +28,8 @@
  *
  */
 #include "include/ruri.h"
+// Global verbose level: 0=quiet, 1=normal, 2=verbose, 3=debug
+int RURI_VERBOSE_LEVEL = 1; // Default to normal
 /*
  * This file was the main.c of ruri.
  * It will parse the arguments, and do the action.
@@ -219,6 +221,20 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
 			ruri_show_helps();
 			exit(EXIT_SUCCESS);
+		}
+		// Verbose level.
+		if (strcmp(argv[index], "-y") == 0 || strcmp(argv[index], "--verbose") == 0) {
+			index++;
+			if (argv[index] != NULL) {
+				int level = atoi(argv[index]);
+				if (level < 0 || level > 3) {
+					ruri_error("{red}Verbose level should be 0 (quiet), 1 (normal), 2 (verbose), or 3 (debug)\n");
+				}
+				RURI_VERBOSE_LEVEL = level;
+				container->verbose_level = level;
+			} else {
+				ruri_error("{red}Please specify verbose level (0-3)\n");
+			}
 		}
 		// Show help page and example usage.
 		if (strcmp(argv[index], "-H") == 0 || strcmp(argv[index], "--show-examples") == 0) {
@@ -1097,6 +1113,19 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					break;
 				case 'z':
 					container->enable_tty_signals = true;
+					break;
+				case 'y':
+					if (i == (strlen(argv[index]) - 1)) {
+						index++;
+						int level = atoi(argv[index]);
+						if (level < 0 || level > 3) {
+							ruri_error("{red}Verbose level should be 0-3\n");
+						}
+						RURI_VERBOSE_LEVEL = level;
+						container->verbose_level = level;
+					} else {
+						ruri_error("Invalid argument %s\n", argv[index]);
+					}
 					break;
 				case 'O':
 					if (i == (strlen(argv[index]) - 1)) {

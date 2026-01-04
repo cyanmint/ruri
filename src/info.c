@@ -166,6 +166,9 @@ void ruri_show_helps(void)
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
 	cprintf("{base}(*16) : 0=no isolation, 1/2=hidepid, 3=ptrace PID virtualization, 4=FUSE+ptrace virtualization\n");
+	cprintf("{base}Verbose options:\n");
+	cprintf("{base}  -y, --verbose [0/1/2/3] .....................: Set verbose level\n");
+	cprintf("{base}                                                 0=quiet, 1=normal (default), 2=verbose, 3=debug\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");

@@ -204,6 +204,8 @@ struct RURI_CONTAINER {
 	char *_Nonnull char_devs[RURI_MAX_CHAR_DEVS];
 	// Hidepid for procfs.
 	int hidepid;
+	// Verbose level: 0=quiet, 1=normal, 2=verbose, 3=debug
+	int verbose_level;
 	// Timens offset.
 	time_t timens_realtime_offset;
 	time_t timens_monotonic_offset;
@@ -234,13 +236,17 @@ struct RURI_ID_MAP {
 	gid_t gid_lower;
 	gid_t gid_count;
 };
+// Global verbose level
+extern int RURI_VERBOSE_LEVEL;
 // Warnings.
 #define ruri_warning(format, ...)                                                                \
 	{                                                                                        \
-		cfprintf(stderr, "{yellow}at %s() at %d at %s: ", __func__, __LINE__, __FILE__); \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                         \
+		if (RURI_VERBOSE_LEVEL >= 1) {                                                   \
+			cfprintf(stderr, "{yellow}at %s() at %d at %s: ", __func__, __LINE__, __FILE__); \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                 \
+		}                                                                                \
 	}
-// Show error msg and exit.
+// Show error msg and exit (always shown regardless of verbose level).
 #define ruri_error(format, ...)                                                                                                                      \
 	{                                                                                                                                            \
 		cfprintf(stderr, "{red}In %s() in %s line %d:\n", __func__, __FILE__, __LINE__);                                                     \
@@ -257,17 +263,26 @@ struct RURI_ID_MAP {
 		cfprintf(stderr, "\033[4m{base}%s{clear}\n", "https://github.com/Moe-hacker/ruri/issues");                                           \
 		exit(114);                                                                                                                           \
 	}
-// Log system.
-#if defined(RURI_DEBUG)
+// Log system - verbose (level 2).
 #define ruri_log(format, ...)                                                                                                         \
 	{                                                                                                                             \
-		struct timeval tv;                                                                                                    \
-		gettimeofday(&tv, NULL);                                                                                              \
-		cfprintf(stderr, "{green}[%ld.%06ld] in %s() in %s line %d:\n", tv.tv_sec, tv.tv_usec, __func__, __FILE__, __LINE__); \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                                                              \
+		if (RURI_VERBOSE_LEVEL >= 2) {                                                                                        \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                      \
+		}                                                                                                                     \
+	}
+// Debug logging (level 3).
+#if defined(RURI_DEBUG)
+#define ruri_debug(format, ...)                                                                                                       \
+	{                                                                                                                             \
+		if (RURI_VERBOSE_LEVEL >= 3) {                                                                                        \
+			struct timeval tv;                                                                                            \
+			gettimeofday(&tv, NULL);                                                                                      \
+			cfprintf(stderr, "{green}[%ld.%06ld] in %s() in %s line %d:\n", tv.tv_sec, tv.tv_usec, __func__, __FILE__, __LINE__); \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                      \
+		}                                                                                                                     \
 	}
 #else
-#define ruri_log(format, ...)
+#define ruri_debug(format, ...)
 #endif
 extern int RURI_PWD_ERRNO;
 // Shared functions.
