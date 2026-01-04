@@ -44,6 +44,21 @@ else
         AC_MSG_NOTICE([.rurienv support disabled])
         DISABLE_RURIENV_CFLAGS="-DDISABLE_RURIENV"
     fi
+    AC_ARG_ENABLE([fuse],[AS_HELP_STRING([--disable-fuse],[Disable FUSE support for -i 4 mode])],[enable_fuse=no],[enable_fuse=yes])
+    if test "$enable_fuse" != "no";then
+        PKG_CHECK_MODULES([FUSE], [fuse3], [
+            FUSE_LIB="$FUSE_LIBS"
+            ENABLE_FUSE_CFLAGS="-DENABLE_FUSE $FUSE_CFLAGS"
+        ], [
+            AC_MSG_NOTICE([libfuse3 not found via pkg-config, FUSE support disabled])
+            ENABLE_FUSE_CFLAGS=""
+            FUSE_LIB=""
+        ])
+    else
+        AC_MSG_NOTICE([FUSE support disabled])
+        ENABLE_FUSE_CFLAGS=""
+        FUSE_LIB=""
+    fi
 fi
 CFLAGS=""
 AC_ARG_ENABLE([static],[AS_HELP_STRING([--enable-static],[Enable static build])],[enable_static=yes],[enable_static=no])
@@ -131,8 +146,8 @@ else
     AC_MSG_RESULT([$RURI_COMMIT_ID])
     RURI_COMMIT_ID="-DRURI_COMMIT_ID=\\\"$RURI_COMMIT_ID\\\""
 fi
-CFLAGS="$CFLAGS $RURI_COMMIT_ID $COREONLY_CFLAGS $DEBUG_CFLAGS $DEV_CFLAGS $STATIC_CFLAGS $DISABLE_LIBCAP_CFLAGS $DISABLE_LIBSECCOMP_CFLAGS $DISABLE_RURIENV_CFLAGS"
-LD_FLAGS="$PTHREAD_LIB $LIBCAP_LIB $LIBSECCOMP_LIB"
+CFLAGS="$CFLAGS $RURI_COMMIT_ID $COREONLY_CFLAGS $DEBUG_CFLAGS $DEV_CFLAGS $STATIC_CFLAGS $DISABLE_LIBCAP_CFLAGS $DISABLE_LIBSECCOMP_CFLAGS $DISABLE_RURIENV_CFLAGS $ENABLE_FUSE_CFLAGS"
+LD_FLAGS="$PTHREAD_LIB $LIBCAP_LIB $LIBSECCOMP_LIB $FUSE_LIB"
 AC_SUBST([STRIP],[$STRIP])
 AC_SUBST([CC],[$CC])
 AC_SUBST([CFLAGS],[$CFLAGS])

@@ -29,6 +29,9 @@
  */
 #include "include/ruri.h"
 #include "fakepid/libfakepid_embedded.h"
+#ifdef ENABLE_FUSE
+#include "fuse/fakefs.h"
+#endif
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -944,6 +947,60 @@ static void setup_fake_proc_complete(const struct RURI_CONTAINER *_Nonnull conta
 	
 	ruri_log("{base}Complete fake /proc setup with PID isolation (hidepid=%d)\n", hidepid_level);
 }
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+#ifdef ENABLE_FUSE
+static void setup_fuse_mounts(const struct RURI_CONTAINER *_Nonnull container)
+{
+	/*
+	 * Set up FUSE-based filesystem mounts for /proc, /sys, /dev
+	 * This is used by -i 4 mode to provide complete filesystem isolation
+	 * with FUSE passthrough filesystems.
+	 */
+	char mountpoint[PATH_MAX];
+	char source[PATH_MAX];
+	
+	// Mount /proc with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/proc", container->container_dir);
+	snprintf(source, sizeof(source), "/proc");
+	mkdir(mountpoint, 0755);
+	int proc_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (proc_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /proc (PID: %d)\n", proc_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /proc\n");
+	}
+	
+	// Mount /sys with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/sys", container->container_dir);
+	snprintf(source, sizeof(source), "/sys");
+	mkdir(mountpoint, 0755);
+	int sys_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (sys_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /sys (PID: %d)\n", sys_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /sys\n");
+	}
+	
+	// Mount /dev with FUSE
+	snprintf(mountpoint, sizeof(mountpoint), "%s/dev", container->container_dir);
+	snprintf(source, sizeof(source), "/dev");
+	mkdir(mountpoint, 0755);
+	int dev_pid = ruri_start_fuse_mount(mountpoint, source);
+	if (dev_pid > 0) {
+		ruri_log("{base}Started FUSE mount for /dev (PID: %d)\n", dev_pid);
+	} else {
+		ruri_warning("{yellow}Warning: Failed to start FUSE mount for /dev\n");
+	}
+	
+	// Wait a bit for all FUSE mounts to stabilize
+	usleep(300000); /* 300ms */
+}
+#endif /* ENABLE_FUSE */
 // Run chroot container.
 void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 {
@@ -1046,8 +1103,16 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace (hidepid=3/4).
-	if (container->hidepid >= 3) {
+	// Setup FUSE mounts for hidepid=4
+	#ifdef ENABLE_FUSE
+	if (container->hidepid == 4) {
+		setup_fuse_mounts(container);
+		// Also set up LD_PRELOAD for PID faking
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
+	}
+	#endif
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
 		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Fix /etc/mtab.
@@ -1178,8 +1243,16 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 	}
 	// Hide pid.
 	hidepid(container->hidepid);
-	// Fake /proc for pid1 namespace (hidepid=3/4).
-	if (container->hidepid >= 3) {
+	// Setup FUSE mounts for hidepid=4
+	#ifdef ENABLE_FUSE
+	if (container->hidepid == 4) {
+		setup_fuse_mounts(container);
+		// Also set up LD_PRELOAD for PID faking
+		setup_fake_proc_complete(container, getpid(), container->hidepid);
+	}
+	#endif
+	// Fake /proc for pid1 namespace (hidepid=3).
+	if (container->hidepid == 3) {
 		setup_fake_proc_complete(container, getpid(), container->hidepid);
 	}
 	// Setup binfmt_misc.

@@ -688,11 +688,6 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 			container->enable_tty_signals = true;
 		} else if (strcmp(argv[index], "-Y") == 0 || strcmp(argv[index], "--redroid") == 0) {
 			container->redroid_mode = true;
-			// Automatically enable -i 4 (FUSE-based emulation) for redroid mode
-			// to handle Android filesystem requirements
-			if (container->hidepid < 4) {
-				container->hidepid = 4;
-			}
 		}
 		// If use_config_file is true.
 		// The first unrecognized argument will be treated as command to exec in container.
@@ -1107,10 +1102,6 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					break;
 				case 'Y':
 					container->redroid_mode = true;
-					// Automatically enable -i 4 for redroid mode
-					if (container->hidepid < 4) {
-						container->hidepid = 4;
-					}
 					break;
 				case 'O':
 					if (i == (strlen(argv[index]) - 1)) {

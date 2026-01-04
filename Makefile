@@ -52,7 +52,7 @@ CHECKER = clang-tidy
 CHECKER_FLAGS = --checks=*,-clang-analyzer-security.insecureAPI.strcpy,-altera-unroll-loops,-cert-err33-c,-concurrency-mt-unsafe,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,-readability-function-cognitive-complexity,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-bugprone-easily-swappable-parameters,-cert-err34-c,-misc-include-cleaner,-readability-identifier-length,-bugprone-signal-handler,-cert-msc54-cpp,-cert-sig30-c,-altera-id-dependent-backward-branch,-bugprone-suspicious-realloc-usage,-hicpp-signed-bitwise,-clang-analyzer-security.insecureAPI.UncheckedReturn,-bugprone-reserved-identifier,-cert-dcl37-c,-cert-dcl51-cpp,-google-readability-function-size,-hicpp-function-size,-readability-function-size,-bugprone-reserved-identifier,-cert-dcl37-c,-cert-dcl51-cpp
 -include config.mk
 # Target.
-objects = easteregg/action.o easteregg/nekofeng.o easteregg/layer.o easteregg/typewriter.o caplist.o chroot.o cprintf.o info.o rurienv.o rurifetch.o seccomp.o signal.o umount.o unshare.o rootless.o mount.o k2v.o elf-magic.o config.o cgroup.o passwd.o ps.o ruri.o main.o
+objects = easteregg/action.o easteregg/nekofeng.o easteregg/layer.o easteregg/typewriter.o caplist.o chroot.o cprintf.o info.o rurienv.o rurifetch.o seccomp.o signal.o umount.o unshare.o rootless.o mount.o k2v.o elf-magic.o config.o cgroup.o passwd.o ps.o ruri.o main.o fuse/fakefs.o
 O = out
 BIN_TARGET = ruri
 .NOTPARALLEL:
@@ -77,6 +77,7 @@ static-bionic :all
 build_dir:
 	@mkdir -p $(O)
 	@mkdir -p $(O)/easteregg
+	@mkdir -p $(O)/fuse
 $(objects) :%.o:src/%.c $(build_dir)
 	@cd $(O)
 	@$(CC) $(CFLAGS) -c ../$< -o $@
