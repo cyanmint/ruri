@@ -76,7 +76,7 @@ void ruri_init_config(struct RURI_CONTAINER *_Nonnull container)
 	container->use_kvm = false;
 	container->char_devs[0] = NULL;
 	container->hidepid = RURI_INIT_VALUE;
-	container->verbose_level = 1; // Default to normal
+	container->verbose_level = 2; // Default to normal (2)
 	container->timens_realtime_offset = 0;
 	container->timens_monotonic_offset = 0;
 	container->seccomp_denied_syscall[0] = NULL;
@@ -218,8 +218,8 @@ char *ruri_container_info_to_k2v(const struct RURI_CONTAINER *_Nonnull container
 	ret = k2v_add_config(int, ret, "hidepid", container->hidepid);
 	ret = k2v_add_newline(ret);
 	// verbose_level.
-	ret = k2v_add_comment(ret, "Verbose level.");
-	ret = k2v_add_comment(ret, "0=quiet, 1=normal, 2=verbose, 3=debug");
+	ret = k2v_add_comment(ret, "Verbose/warning level.");
+	ret = k2v_add_comment(ret, "0=suppress all, 1=suppress warnings, 2=normal, 3=verbose, 4=debug");
 	ret = k2v_add_config(int, ret, "verbose_level", container->verbose_level);
 	ret = k2v_add_newline(ret);
 	// cpuset.
@@ -725,8 +725,8 @@ void ruri_correct_config(const char *_Nonnull path)
 		container.hidepid = k2v_get_key(int, "hidepid", buf);
 	}
 	if (!have_key("verbose_level", buf)) {
-		ruri_warning("{green}No key verbose_level found, set to default value (1)\n{clear}");
-		container.verbose_level = 1;
+		ruri_warning("{green}No key verbose_level found, set to default value (2)\n{clear}");
+		container.verbose_level = 2;
 	} else {
 		container.verbose_level = k2v_get_key(int, "verbose_level", buf);
 	}

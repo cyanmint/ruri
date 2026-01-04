@@ -55,6 +55,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <linux/limits.h>
 #include <linux/sched.h>
 #include <linux/securebits.h>
@@ -236,45 +237,48 @@ struct RURI_ID_MAP {
 	gid_t gid_lower;
 	gid_t gid_count;
 };
-// Global verbose level
+// Global verbose level (warning level)
+// 0=suppress errors and warnings, 1=suppress warnings, 2=normal (default), 3=verbose, 4=debug
 extern int RURI_VERBOSE_LEVEL;
 // Warnings.
 #define ruri_warning(format, ...)                                                                \
 	{                                                                                        \
-		if (RURI_VERBOSE_LEVEL >= 1) {                                                   \
+		if (RURI_VERBOSE_LEVEL >= 2) {                                                   \
 			cfprintf(stderr, "{yellow}at %s() at %d at %s: ", __func__, __LINE__, __FILE__); \
 			cfprintf(stderr, format, ##__VA_ARGS__);                                 \
 		}                                                                                \
 	}
-// Show error msg and exit (always shown regardless of verbose level).
+// Show error msg and exit.
 #define ruri_error(format, ...)                                                                                                                      \
 	{                                                                                                                                            \
-		cfprintf(stderr, "{red}In %s() in %s line %d:\n", __func__, __FILE__, __LINE__);                                                     \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                                                                             \
-		cfprintf(stderr, "{base}%s{clear}\n", "\n  .^.   .^.");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", "  /⋀\\_ﾉ_/⋀\\");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", " /ﾉｿﾉ\\ﾉｿ丶)|");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", " ﾙﾘﾘ >  x )ﾘ");                                                                               \
-		cfprintf(stderr, "{base}%s{clear}\n", "ﾉノ㇏  ^  ﾉ|ﾉ");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", "      ⠁⠁");                                                                                   \
-		cfprintf(stderr, "{base}%s{clear}\n", "RURI ERROR MESSAGE");                                                                         \
-		cfprintf(stderr, "{base}%s{clear}\n", "Note: for some configs, you might need to run `-U` to umount container before changing it."); \
-		cfprintf(stderr, "{base}%s{clear}\n", "If you think something is wrong, please report at:");                                         \
-		cfprintf(stderr, "\033[4m{base}%s{clear}\n", "https://github.com/Moe-hacker/ruri/issues");                                           \
+		if (RURI_VERBOSE_LEVEL >= 1) {                                                                                                       \
+			cfprintf(stderr, "{red}In %s() in %s line %d:\n", __func__, __FILE__, __LINE__);                                             \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                                     \
+			cfprintf(stderr, "{base}%s{clear}\n", "\n  .^.   .^.");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", "  /⋀\\_ﾉ_/⋀\\");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", " /ﾉｿﾉ\\ﾉｿ丶)|");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", " ﾙﾘﾘ >  x )ﾘ");                                                                       \
+			cfprintf(stderr, "{base}%s{clear}\n", "ﾉノ㇏  ^  ﾉ|ﾉ");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", "      ⠁⠁");                                                                           \
+			cfprintf(stderr, "{base}%s{clear}\n", "RURI ERROR MESSAGE");                                                                 \
+			cfprintf(stderr, "{base}%s{clear}\n", "Note: for some configs, you might need to run `-U` to umount container before changing it."); \
+			cfprintf(stderr, "{base}%s{clear}\n", "If you think something is wrong, please report at:");                                 \
+			cfprintf(stderr, "\033[4m{base}%s{clear}\n", "https://github.com/Moe-hacker/ruri/issues");                                   \
+		}                                                                                                                                    \
 		exit(114);                                                                                                                           \
 	}
-// Log system - verbose (level 2).
+// Log system - verbose (level 3).
 #define ruri_log(format, ...)                                                                                                         \
 	{                                                                                                                             \
-		if (RURI_VERBOSE_LEVEL >= 2) {                                                                                        \
+		if (RURI_VERBOSE_LEVEL >= 3) {                                                                                        \
 			cfprintf(stderr, format, ##__VA_ARGS__);                                                                      \
 		}                                                                                                                     \
 	}
-// Debug logging (level 3).
+// Debug logging (level 4).
 #if defined(RURI_DEBUG)
 #define ruri_debug(format, ...)                                                                                                       \
 	{                                                                                                                             \
-		if (RURI_VERBOSE_LEVEL >= 3) {                                                                                        \
+		if (RURI_VERBOSE_LEVEL >= 4) {                                                                                        \
 			struct timeval tv;                                                                                            \
 			gettimeofday(&tv, NULL);                                                                                      \
 			cfprintf(stderr, "{green}[%ld.%06ld] in %s() in %s line %d:\n", tv.tv_sec, tv.tv_usec, __func__, __FILE__, __LINE__); \
