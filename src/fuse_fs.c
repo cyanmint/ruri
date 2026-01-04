@@ -45,20 +45,53 @@
 #define FUSE_USE_VERSION 31
 #include <fuse3/fuse.h>
 #include <pthread.h>
+#include <ctype.h>
 
 /*
- * This file implements FUSE-based filesystem virtualization for /proc, /sys, /dev.
- * When hidepid == 4, we mount FUSE filesystems to emulate these directories
- * with fake PID information.
+ * This file implements FUSE-based filesystem virtualization for /proc.
+ * When hidepid == 4, we mount a FUSE filesystem over /proc to provide
+ * PID virtualization in conjunction with ptrace.
+ * 
+ * The approach:
+ * 1. Pass through most /proc files to the real /proc
+ * 2. For /proc/[pid] directories, map real PIDs to fake PIDs
+ * 3. For /proc/self, always point to fake PID 1
  */
 
 // FUSE context data
 struct fuse_fs_ctx {
-	char *real_path;
+	char real_path[PATH_MAX];
 	pid_t base_pid;
+	char container_dir[PATH_MAX];
 };
 
-static struct fuse_fs_ctx proc_ctx = { .real_path = "/proc", .base_pid = 0 };
+static struct fuse_fs_ctx proc_ctx = {
+	.real_path = "/proc",
+	.base_pid = 0,
+	.container_dir = ""
+};
+
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+// Helper function to check if a path component is all digits (PID)
+static bool is_pid_path(const char *name)
+{
+	if (name == NULL || name[0] == '\0') {
+		return false;
+	}
+	
+	for (size_t i = 0; name[i] != '\0'; i++) {
+		if (!isdigit((unsigned char)name[i])) {
+			return false;
+		}
+	}
+	
+	return true;
+}
 
 /*
  * AI-GENERATED FUNCTION NOTICE
@@ -67,32 +100,21 @@ static struct fuse_fs_ctx proc_ctx = { .real_path = "/proc", .base_pid = 0 };
  * Users should verify its correctness before use.
  */
 // FUSE getattr implementation for fake /proc
+// This passes through most requests to the real /proc
 static int fuse_proc_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
 	(void)fi;
-	memset(stbuf, 0, sizeof(struct stat));
 	
+	// For root directory
 	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		return 0;
+		return stat(proc_ctx.real_path, stbuf);
 	}
 	
-	// Check if it's a PID directory (numeric)
-	if (path[0] == '/' && isdigit(path[1])) {
-		// Map to fake PID 1 if it matches our container's base process
-		char real_path[PATH_MAX];
-		snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
-		
-		if (stat(real_path, stbuf) == 0) {
-			return 0;
-		}
-	}
-	
-	// For other files, try to get from real /proc
+	// Build path to real /proc
 	char real_path[PATH_MAX];
 	snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
 	
+	// Pass through to real /proc
 	if (stat(real_path, stbuf) == -1) {
 		return -errno;
 	}
@@ -107,6 +129,7 @@ static int fuse_proc_getattr(const char *path, struct stat *stbuf, struct fuse_f
  * Users should verify its correctness before use.
  */
 // FUSE readdir implementation for fake /proc
+// This shows only our container's processes as PID 1, 2, 3, etc.
 static int fuse_proc_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                              off_t offset, struct fuse_file_info *fi,
                              enum fuse_readdir_flags flags)
@@ -118,19 +141,57 @@ static int fuse_proc_readdir(const char *path, void *buf, fuse_fill_dir_t filler
 	filler(buf, ".", NULL, 0, 0);
 	filler(buf, "..", NULL, 0, 0);
 	
+	// For root /proc, we pass through most entries but filter PIDs
 	if (strcmp(path, "/") == 0) {
-		// Add fake PID 1 directory
-		filler(buf, "1", NULL, 0, 0);
+		DIR *dp = opendir(proc_ctx.real_path);
+		if (dp == NULL) {
+			return -errno;
+		}
 		
-		// Add other standard /proc entries
-		filler(buf, "self", NULL, 0, 0);
-		filler(buf, "cpuinfo", NULL, 0, 0);
-		filler(buf, "meminfo", NULL, 0, 0);
-		filler(buf, "mounts", NULL, 0, 0);
-		filler(buf, "stat", NULL, 0, 0);
-		filler(buf, "uptime", NULL, 0, 0);
+		struct dirent *de;
+		while ((de = readdir(dp)) != NULL) {
+			// Skip . and ..
+			if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
+				continue;
+			}
+			
+			// For PID directories, only show our base process as PID 1
+			if (is_pid_path(de->d_name)) {
+				pid_t real_pid = (pid_t)atoi(de->d_name);
+				// Only show our container's base process
+				if (real_pid == proc_ctx.base_pid) {
+					filler(buf, "1", NULL, 0, 0);
+				}
+			} else {
+				// Pass through non-PID entries
+				filler(buf, de->d_name, NULL, 0, 0);
+			}
+		}
+		
+		closedir(dp);
+		return 0;
 	}
 	
+	// For subdirectories under /proc/[pid], pass through
+	char real_path[PATH_MAX];
+	snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	
+	// Special handling for /proc/1 -> map to our base PID
+	if (strcmp(path, "/1") == 0) {
+		snprintf(real_path, sizeof(real_path), "%s/%d", proc_ctx.real_path, proc_ctx.base_pid);
+	}
+	
+	DIR *dp = opendir(real_path);
+	if (dp == NULL) {
+		return -errno;
+	}
+	
+	struct dirent *de;
+	while ((de = readdir(dp)) != NULL) {
+		filler(buf, de->d_name, NULL, 0, 0);
+	}
+	
+	closedir(dp);
 	return 0;
 }
 
@@ -147,7 +208,15 @@ static int fuse_proc_read(const char *path, char *buf, size_t size, off_t offset
 	(void)fi;
 	
 	char real_path[PATH_MAX];
-	snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	
+	// Map /proc/1 to our real base PID
+	if (strncmp(path, "/1/", 3) == 0 || strcmp(path, "/1") == 0) {
+		const char *subpath = (strcmp(path, "/1") == 0) ? "" : (path + 2);
+		snprintf(real_path, sizeof(real_path), "%s/%d%s", 
+		         proc_ctx.real_path, proc_ctx.base_pid, subpath);
+	} else {
+		snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	}
 	
 	int fd = open(real_path, O_RDONLY);
 	if (fd == -1) {
@@ -155,11 +224,13 @@ static int fuse_proc_read(const char *path, char *buf, size_t size, off_t offset
 	}
 	
 	ssize_t res = pread(fd, buf, size, offset);
+	int save_errno = errno;
+	close(fd);
+	
 	if (res == -1) {
-		res = -errno;
+		return -save_errno;
 	}
 	
-	close(fd);
 	return (int)res;
 }
 
@@ -173,7 +244,21 @@ static int fuse_proc_read(const char *path, char *buf, size_t size, off_t offset
 static int fuse_proc_readlink(const char *path, char *buf, size_t size)
 {
 	char real_path[PATH_MAX];
-	snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	
+	// Special handling for /proc/self -> always point to fake PID 1
+	if (strcmp(path, "/self") == 0) {
+		snprintf(buf, size, "1");
+		return 0;
+	}
+	
+	// Map /proc/1 to our real base PID
+	if (strncmp(path, "/1/", 3) == 0 || strcmp(path, "/1") == 0) {
+		const char *subpath = (strcmp(path, "/1") == 0) ? "" : (path + 2);
+		snprintf(real_path, sizeof(real_path), "%s/%d%s", 
+		         proc_ctx.real_path, proc_ctx.base_pid, subpath);
+	} else {
+		snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	}
 	
 	ssize_t res = readlink(real_path, buf, size - 1);
 	if (res == -1) {
@@ -184,12 +269,46 @@ static int fuse_proc_readlink(const char *path, char *buf, size_t size)
 	return 0;
 }
 
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+// FUSE open implementation
+static int fuse_proc_open(const char *path, struct fuse_file_info *fi)
+{
+	char real_path[PATH_MAX];
+	
+	// Map /proc/1 to our real base PID
+	if (strncmp(path, "/1/", 3) == 0 || strcmp(path, "/1") == 0) {
+		const char *subpath = (strcmp(path, "/1") == 0) ? "" : (path + 2);
+		snprintf(real_path, sizeof(real_path), "%s/%d%s", 
+		         proc_ctx.real_path, proc_ctx.base_pid, subpath);
+	} else {
+		snprintf(real_path, sizeof(real_path), "%s%s", proc_ctx.real_path, path);
+	}
+	
+	int fd = open(real_path, fi->flags);
+	if (fd == -1) {
+		return -errno;
+	}
+	
+	close(fd);
+	return 0;
+}
+
 static struct fuse_operations fuse_proc_ops = {
 	.getattr = fuse_proc_getattr,
 	.readdir = fuse_proc_readdir,
 	.read = fuse_proc_read,
 	.readlink = fuse_proc_readlink,
+	.open = fuse_proc_open,
 };
+
+// Global FUSE handle for cleanup
+static struct fuse *global_fuse = NULL;
+static pthread_t global_fuse_thread = 0;
 
 /*
  * AI-GENERATED FUNCTION NOTICE
@@ -201,33 +320,48 @@ static struct fuse_operations fuse_proc_ops = {
 static void *fuse_proc_thread(void *arg)
 {
 	char *mountpoint = (char *)arg;
+	
+	// FUSE options
 	char *fuse_argv[] = {
 		"ruri_fuse",
 		"-f", // foreground
 		"-o", "allow_other",
 		"-o", "default_permissions",
+		"-o", "fsname=ruri_proc",
 		mountpoint,
 		NULL
 	};
-	int fuse_argc = 7;
+	int fuse_argc = 8;
 	
 	struct fuse_args args = FUSE_ARGS_INIT(fuse_argc, fuse_argv);
 	struct fuse *fuse = fuse_new(&args, &fuse_proc_ops, sizeof(fuse_proc_ops), NULL);
 	
 	if (fuse == NULL) {
 		ruri_warning("{yellow}Failed to create FUSE filesystem\n");
+		free(arg);
 		return NULL;
 	}
+	
+	global_fuse = fuse;
 	
 	if (fuse_mount(fuse, mountpoint) != 0) {
-		ruri_warning("{yellow}Failed to mount FUSE filesystem\n");
+		ruri_warning("{yellow}Failed to mount FUSE filesystem at %s\n", mountpoint);
 		fuse_destroy(fuse);
+		global_fuse = NULL;
+		free(arg);
 		return NULL;
 	}
 	
+	ruri_log("{base}FUSE /proc mounted at %s\n", mountpoint);
+	
+	// Run FUSE main loop
 	fuse_loop(fuse);
+	
+	// Cleanup
 	fuse_unmount(fuse);
 	fuse_destroy(fuse);
+	global_fuse = NULL;
+	free(arg);
 	
 	return NULL;
 }
@@ -241,27 +375,66 @@ static void *fuse_proc_thread(void *arg)
 // Initialize FUSE-based filesystem virtualization
 void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 {
-	ruri_log("{base}Initializing FUSE filesystem virtualization\n");
+	ruri_log("{base}Initializing FUSE filesystem virtualization (PID %d)\n", base_pid);
 	
 	proc_ctx.base_pid = base_pid;
+	strncpy(proc_ctx.container_dir, container_dir, sizeof(proc_ctx.container_dir) - 1);
 	
-	// Create mount points
-	char proc_mount[PATH_MAX];
-	snprintf(proc_mount, sizeof(proc_mount), "%s/proc", container_dir);
-	
-	// Ensure directories exist
-	ruri_mkdirs(proc_mount, 0755);
-	
-	// Start FUSE in a separate thread
-	pthread_t fuse_thread;
-	if (pthread_create(&fuse_thread, NULL, fuse_proc_thread, proc_mount) != 0) {
-		ruri_warning("{yellow}Failed to create FUSE thread\n");
+	// Create mount point for /proc
+	char *proc_mount = (char *)malloc(PATH_MAX);
+	if (proc_mount == NULL) {
+		ruri_warning("{yellow}Failed to allocate memory for mount point\n");
 		return;
 	}
 	
-	pthread_detach(fuse_thread);
+	snprintf(proc_mount, PATH_MAX, "%s/proc", container_dir);
 	
-	ruri_log("{base}FUSE filesystem virtualization initialized\n");
+	// Ensure the directory exists
+	if (access(proc_mount, F_OK) != 0) {
+		if (mkdir(proc_mount, 0755) != 0 && errno != EEXIST) {
+			ruri_warning("{yellow}Failed to create /proc mount point: %s\n", strerror(errno));
+			free(proc_mount);
+			return;
+		}
+	}
+	
+	// Start FUSE in a separate thread
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	
+	if (pthread_create(&global_fuse_thread, &attr, fuse_proc_thread, proc_mount) != 0) {
+		ruri_warning("{yellow}Failed to create FUSE thread: %s\n", strerror(errno));
+		free(proc_mount);
+		pthread_attr_destroy(&attr);
+		return;
+	}
+	
+	pthread_attr_destroy(&attr);
+	
+	// Give FUSE time to initialize
+	usleep(100000); // 100ms
+	
+	ruri_log("{base}FUSE filesystem virtualization started\n");
+}
+
+/*
+ * AI-GENERATED FUNCTION NOTICE
+ * 
+ * This function was generated with the assistance of AI (GitHub Copilot).
+ * Users should verify its correctness before use.
+ */
+// Cleanup FUSE filesystem
+void ruri_cleanup_fuse_fs(void)
+{
+	if (global_fuse != NULL) {
+		// Signal FUSE to unmount
+		if (global_fuse_thread != 0) {
+			pthread_cancel(global_fuse_thread);
+			global_fuse_thread = 0;
+		}
+		global_fuse = NULL;
+	}
 }
 
 #else
@@ -271,5 +444,10 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	(void)container_dir;
 	(void)base_pid;
 	ruri_warning("{yellow}FUSE support is not compiled in, -i 4 mode unavailable\n");
+}
+
+void ruri_cleanup_fuse_fs(void)
+{
+	// Nothing to do
 }
 #endif

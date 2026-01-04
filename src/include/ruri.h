@@ -312,6 +312,7 @@ void ruri_cleanup_ptrace_pid(void);
 // FUSE-based filesystem virtualization (for -i 4)
 #ifndef DISABLE_FUSE
 void ruri_init_fuse_fs(const char *_Nonnull container_dir, pid_t base_pid);
+void ruri_cleanup_fuse_fs(void);
 #endif
 // Bionic does not have memfd_create()
 #ifdef __ANDROID__
