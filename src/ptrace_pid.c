@@ -291,9 +291,15 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 				pid_t real_pid = (pid_t)regs.rax;
 				if (real_pid > 0) {
 					pid_t fake_pid = get_fake_pid(real_pid);
+					ruri_log("{base}PID syscall %ld: real=%d -> fake=%d\n", syscall_num, real_pid, fake_pid);
 					// Modify the return value
 					regs.rax = fake_pid;
-					ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+					if (ptrace(PTRACE_SETREGS, child_pid, 0, &regs) == -1) {
+						int save_errno = errno;
+						ruri_warning("{yellow}Failed to set registers: %s\n", strerror(save_errno));
+					} else {
+						ruri_log("{base}Successfully set rax=%d\n", fake_pid);
+					}
 				}
 			}
 			
