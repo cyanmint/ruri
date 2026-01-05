@@ -254,6 +254,16 @@ void ruri_ptrace_pid_wrapper(pid_t child_pid)
 			ptrace(PTRACE_GETEVENTMSG, child_pid, 0, &new_pid);
 			if (new_pid > 0) {
 				get_fake_pid((pid_t)new_pid);
+				
+				// For CLONE events (threads), detach from them to avoid tracing FUSE threads
+				// We only want to trace the main process, not threads
+				if (status >> 8 == (SIGTRAP | (PTRACE_EVENT_CLONE << 8))) {
+					// Wait for the new thread to stop, then detach
+					int thread_status;
+					if (waitpid((pid_t)new_pid, &thread_status, __WALL) > 0) {
+						ptrace(PTRACE_DETACH, (pid_t)new_pid, 0, 0);
+					}
+				}
 			}
 			continue;
 		}
