@@ -60,13 +60,13 @@
 
 // FUSE context data
 struct fuse_fs_ctx {
-	char real_path[PATH_MAX];
-	pid_t base_pid;
-	char container_dir[PATH_MAX];
+	char real_path[PATH_MAX];    // Path to real procfs (bind-mounted)
+	pid_t base_pid;               // The PID of container's init process
+	char container_dir[PATH_MAX]; // Container root directory
 };
 
 static struct fuse_fs_ctx proc_ctx = {
-	.real_path = "/proc",
+	.real_path = "/.ruri_real_proc",  // Hidden bind mount of real /proc
 	.base_pid = 0,
 	.container_dir = ""
 };
@@ -321,23 +321,19 @@ static void *fuse_proc_thread(void *arg)
 {
 	char *mountpoint = (char *)arg;
 	
-	// FUSE options
-	char *fuse_argv[] = {
-		"ruri_fuse",
-		"-f", // foreground
-		"-o", "allow_other",
-		"-o", "default_permissions",
-		"-o", "fsname=ruri_proc",
-		mountpoint,
-		NULL
-	};
-	int fuse_argc = 8;
+	// FUSE mount options - no command-line style options for libfuse3
+	struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
 	
-	struct fuse_args args = FUSE_ARGS_INIT(fuse_argc, fuse_argv);
+	// Add mount options
+	fuse_opt_add_arg(&args, "ruri_fuse");
+	fuse_opt_add_arg(&args, "-o");
+	fuse_opt_add_arg(&args, "allow_other,default_permissions,fsname=ruri_proc");
+	
 	struct fuse *fuse = fuse_new(&args, &fuse_proc_ops, sizeof(fuse_proc_ops), NULL);
 	
 	if (fuse == NULL) {
 		ruri_warning("{yellow}Failed to create FUSE filesystem\n");
+		fuse_opt_free_args(&args);
 		free(arg);
 		return NULL;
 	}
@@ -348,11 +344,14 @@ static void *fuse_proc_thread(void *arg)
 		ruri_warning("{yellow}Failed to mount FUSE filesystem at %s\n", mountpoint);
 		fuse_destroy(fuse);
 		global_fuse = NULL;
+		fuse_opt_free_args(&args);
 		free(arg);
 		return NULL;
 	}
 	
 	ruri_log("{base}FUSE /proc mounted at %s\n", mountpoint);
+	
+	fuse_opt_free_args(&args);
 	
 	// Run FUSE main loop
 	fuse_loop(fuse);
@@ -387,8 +386,19 @@ void ruri_init_fuse_fs(const char *container_dir, pid_t base_pid)
 	// If container_dir is "/", we're already inside the container
 	if (strcmp(container_dir, "/") == 0) {
 		snprintf(proc_mount, sizeof(proc_mount), "/proc");
+		
+		// CRITICAL: Bind-mount the real /proc to a hidden location before FUSE mounts
+		// This prevents circular reference when FUSE tries to read from /proc
+		mkdir(proc_ctx.real_path, 0755);
+		if (mount("/proc", proc_ctx.real_path, NULL, MS_BIND | MS_REC, NULL) != 0) {
+			ruri_warning("{yellow}Failed to bind-mount real /proc to %s: %s\n", 
+			             proc_ctx.real_path, strerror(errno));
+			return;
+		}
 	} else {
 		snprintf(proc_mount, sizeof(proc_mount), "%s/proc", container_dir);
+		// For non-root container_dir, just use host /proc
+		snprintf(proc_ctx.real_path, sizeof(proc_ctx.real_path), "/proc");
 	}
 	
 	// Ensure the directory exists
