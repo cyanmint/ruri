@@ -28,6 +28,8 @@
  *
  */
 #include "include/ruri.h"
+// Global verbose level (warning level): 0=suppress all, 1=suppress warnings, 2=normal (default), 3=verbose, 4=debug
+int RURI_VERBOSE_LEVEL = 2; // Default to normal
 /*
  * This file was the main.c of ruri.
  * It will parse the arguments, and do the action.
@@ -395,9 +397,22 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		else if (strcmp(argv[index], "-g") == 0 || strcmp(argv[index], "--skip-setgroups") == 0) {
 			container->skip_setgroups = true;
 		}
-		// Do not show warnings.
+		// Warning/verbose level.
 		else if (strcmp(argv[index], "-w") == 0 || strcmp(argv[index], "--no-warnings") == 0) {
-			container->no_warnings = true;
+			// Check if next argument is a number
+			if (index + 1 < argc && argv[index + 1] != NULL && isdigit(argv[index + 1][0])) {
+				index++;
+				int level = atoi(argv[index]);
+				if (level < 0 || level > 4) {
+					ruri_error("{red}Warning level should be 0-4 (0=suppress all, 1=suppress warnings, 2=normal, 3=verbose, 4=debug)\n");
+				}
+				RURI_VERBOSE_LEVEL = level;
+				container->verbose_level = level;
+			} else {
+				// Old behavior: -w without number means suppress warnings (level 1)
+				RURI_VERBOSE_LEVEL = 1;
+				container->verbose_level = 1;
+			}
 		}
 		// Just chroot.
 		else if (strcmp(argv[index], "-j") == 0 || strcmp(argv[index], "--just-chroot") == 0) {
@@ -773,7 +788,37 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					container->ro_root = true;
 					break;
 				case 'w':
-					container->no_warnings = true;
+					// Check if the next character is a digit
+					if (i + 1 < strlen(argv[index]) && isdigit(argv[index][i + 1])) {
+						// Extract the level from the string
+						int level = argv[index][i + 1] - '0';
+						if (level < 0 || level > 4) {
+							ruri_error("{red}Warning level should be 0-4\n");
+						}
+						RURI_VERBOSE_LEVEL = level;
+						container->verbose_level = level;
+						// Skip the digit we just processed
+						i++;
+					} else if (i == (strlen(argv[index]) - 1)) {
+						// Check if next arg is a number
+						if (index + 1 < argc && argv[index + 1] != NULL && isdigit(argv[index + 1][0]) && strlen(argv[index + 1]) == 1) {
+							index++;
+							int level = atoi(argv[index]);
+							if (level < 0 || level > 4) {
+								ruri_error("{red}Warning level should be 0-4\n");
+							}
+							RURI_VERBOSE_LEVEL = level;
+							container->verbose_level = level;
+						} else {
+							// Old behavior: -w without number means suppress warnings
+							RURI_VERBOSE_LEVEL = 1;
+							container->verbose_level = 1;
+						}
+					} else {
+						// -w in the middle of other flags, treat as suppress warnings
+						RURI_VERBOSE_LEVEL = 1;
+						container->verbose_level = 1;
+					}
 					break;
 				case 'f':
 					fork_exec = true;

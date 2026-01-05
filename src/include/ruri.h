@@ -34,6 +34,13 @@
 #else
 #define _GNU_SOURCE
 #endif
+// FUSE timing constants
+#ifndef DISABLE_FUSE
+// Time to wait for FUSE thread initialization (microseconds)
+#define FUSE_INIT_DELAY_US 100000  // 100ms
+// Time to wait for FUSE mount to be ready (microseconds)
+#define FUSE_MOUNT_DELAY_US 200000 // 200ms
+#endif
 #ifdef RURI_CORE_ONLY
 #ifndef DISABLE_LIBSECCOMP
 #define DISABLE_LIBSECCOMP
@@ -48,6 +55,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include <linux/limits.h>
 #include <linux/sched.h>
 #include <linux/securebits.h>
@@ -197,6 +205,8 @@ struct RURI_CONTAINER {
 	char *_Nonnull char_devs[RURI_MAX_CHAR_DEVS];
 	// Hidepid for procfs.
 	int hidepid;
+	// Verbose level: 0=quiet, 1=normal, 2=verbose, 3=debug
+	int verbose_level;
 	// Timens offset.
 	time_t timens_realtime_offset;
 	time_t timens_monotonic_offset;
@@ -227,40 +237,56 @@ struct RURI_ID_MAP {
 	gid_t gid_lower;
 	gid_t gid_count;
 };
+// Global verbose level (warning level)
+// 0=suppress errors and warnings, 1=suppress warnings, 2=normal (default), 3=verbose, 4=debug
+extern int RURI_VERBOSE_LEVEL;
 // Warnings.
 #define ruri_warning(format, ...)                                                                \
 	{                                                                                        \
-		cfprintf(stderr, "{yellow}at %s() at %d at %s: ", __func__, __LINE__, __FILE__); \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                         \
+		if (RURI_VERBOSE_LEVEL >= 2) {                                                   \
+			cfprintf(stderr, "{yellow}at %s() at %d at %s: ", __func__, __LINE__, __FILE__); \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                 \
+		}                                                                                \
 	}
 // Show error msg and exit.
 #define ruri_error(format, ...)                                                                                                                      \
 	{                                                                                                                                            \
-		cfprintf(stderr, "{red}In %s() in %s line %d:\n", __func__, __FILE__, __LINE__);                                                     \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                                                                             \
-		cfprintf(stderr, "{base}%s{clear}\n", "\n  .^.   .^.");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", "  /⋀\\_ﾉ_/⋀\\");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", " /ﾉｿﾉ\\ﾉｿ丶)|");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", " ﾙﾘﾘ >  x )ﾘ");                                                                               \
-		cfprintf(stderr, "{base}%s{clear}\n", "ﾉノ㇏  ^  ﾉ|ﾉ");                                                                              \
-		cfprintf(stderr, "{base}%s{clear}\n", "      ⠁⠁");                                                                                   \
-		cfprintf(stderr, "{base}%s{clear}\n", "RURI ERROR MESSAGE");                                                                         \
-		cfprintf(stderr, "{base}%s{clear}\n", "Note: for some configs, you might need to run `-U` to umount container before changing it."); \
-		cfprintf(stderr, "{base}%s{clear}\n", "If you think something is wrong, please report at:");                                         \
-		cfprintf(stderr, "\033[4m{base}%s{clear}\n", "https://github.com/Moe-hacker/ruri/issues");                                           \
+		if (RURI_VERBOSE_LEVEL >= 1) {                                                                                                       \
+			cfprintf(stderr, "{red}In %s() in %s line %d:\n", __func__, __FILE__, __LINE__);                                             \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                                     \
+			cfprintf(stderr, "{base}%s{clear}\n", "\n  .^.   .^.");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", "  /⋀\\_ﾉ_/⋀\\");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", " /ﾉｿﾉ\\ﾉｿ丶)|");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", " ﾙﾘﾘ >  x )ﾘ");                                                                       \
+			cfprintf(stderr, "{base}%s{clear}\n", "ﾉノ㇏  ^  ﾉ|ﾉ");                                                                      \
+			cfprintf(stderr, "{base}%s{clear}\n", "      ⠁⠁");                                                                           \
+			cfprintf(stderr, "{base}%s{clear}\n", "RURI ERROR MESSAGE");                                                                 \
+			cfprintf(stderr, "{base}%s{clear}\n", "Note: for some configs, you might need to run `-U` to umount container before changing it."); \
+			cfprintf(stderr, "{base}%s{clear}\n", "If you think something is wrong, please report at:");                                 \
+			cfprintf(stderr, "\033[4m{base}%s{clear}\n", "https://github.com/Moe-hacker/ruri/issues");                                   \
+		}                                                                                                                                    \
 		exit(114);                                                                                                                           \
 	}
-// Log system.
-#if defined(RURI_DEBUG)
+// Log system - verbose (level 3).
 #define ruri_log(format, ...)                                                                                                         \
 	{                                                                                                                             \
-		struct timeval tv;                                                                                                    \
-		gettimeofday(&tv, NULL);                                                                                              \
-		cfprintf(stderr, "{green}[%ld.%06ld] in %s() in %s line %d:\n", tv.tv_sec, tv.tv_usec, __func__, __FILE__, __LINE__); \
-		cfprintf(stderr, format, ##__VA_ARGS__);                                                                              \
+		if (RURI_VERBOSE_LEVEL >= 3) {                                                                                        \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                      \
+		}                                                                                                                     \
+	}
+// Debug logging (level 4).
+#if defined(RURI_DEBUG)
+#define ruri_debug(format, ...)                                                                                                       \
+	{                                                                                                                             \
+		if (RURI_VERBOSE_LEVEL >= 4) {                                                                                        \
+			struct timeval tv;                                                                                            \
+			gettimeofday(&tv, NULL);                                                                                      \
+			cfprintf(stderr, "{green}[%ld.%06ld] in %s() in %s line %d:\n", tv.tv_sec, tv.tv_usec, __func__, __FILE__, __LINE__); \
+			cfprintf(stderr, format, ##__VA_ARGS__);                                                                      \
+		}                                                                                                                     \
 	}
 #else
-#define ruri_log(format, ...)
+#define ruri_debug(format, ...)
 #endif
 extern int RURI_PWD_ERRNO;
 // Shared functions.
@@ -312,6 +338,7 @@ void ruri_cleanup_ptrace_pid(void);
 // FUSE-based filesystem virtualization (for -i 4)
 #ifndef DISABLE_FUSE
 void ruri_init_fuse_fs(const char *_Nonnull container_dir, pid_t base_pid);
+void ruri_cleanup_fuse_fs(void);
 #endif
 // Bionic does not have memfd_create()
 #ifdef __ANDROID__

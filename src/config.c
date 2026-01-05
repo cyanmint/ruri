@@ -76,6 +76,7 @@ void ruri_init_config(struct RURI_CONTAINER *_Nonnull container)
 	container->use_kvm = false;
 	container->char_devs[0] = NULL;
 	container->hidepid = RURI_INIT_VALUE;
+	container->verbose_level = 2; // Default to normal (2)
 	container->timens_realtime_offset = 0;
 	container->timens_monotonic_offset = 0;
 	container->seccomp_denied_syscall[0] = NULL;
@@ -215,6 +216,11 @@ char *ruri_container_info_to_k2v(const struct RURI_CONTAINER *_Nonnull container
 	ret = k2v_add_comment(ret, "Hide pid in /proc.");
 	ret = k2v_add_comment(ret, "Can be 1 or 2, set <=0 to use default.");
 	ret = k2v_add_config(int, ret, "hidepid", container->hidepid);
+	ret = k2v_add_newline(ret);
+	// verbose_level.
+	ret = k2v_add_comment(ret, "Verbose/warning level.");
+	ret = k2v_add_comment(ret, "0=suppress all, 1=suppress warnings, 2=normal, 3=verbose, 4=debug");
+	ret = k2v_add_config(int, ret, "verbose_level", container->verbose_level);
 	ret = k2v_add_newline(ret);
 	// cpuset.
 	ret = k2v_add_comment(ret, "Cgroup cpuset limit.");
@@ -412,7 +418,7 @@ void ruri_read_config(struct RURI_CONTAINER *_Nonnull container, const char *_No
 	close(fd);
 	char *buf = k2v_open_file(path, (size_t)size);
 	// Check if config is valid.
-	char *key_list[] = { "timens_realtime_offset", "timens_monotonic_offset", "hidepid", "char_devs", "use_kvm", "no_network", "container_dir", "user", "drop_caplist", "no_new_privs", "enable_seccomp", "rootless", "no_warnings", "cross_arch", "qemu_path", "use_rurienv", "cpuset", "memory", "cpupercent", "just_chroot", "unmask_dirs", "mount_host_runtime", "work_dir", "rootfs_source", "ro_root", "extra_mountpoint", "extra_ro_mountpoint", "env", "command", "hostname", NULL };
+	char *key_list[] = { "verbose_level", "timens_realtime_offset", "timens_monotonic_offset", "hidepid", "char_devs", "use_kvm", "no_network", "container_dir", "user", "drop_caplist", "no_new_privs", "enable_seccomp", "rootless", "no_warnings", "cross_arch", "qemu_path", "use_rurienv", "cpuset", "memory", "cpupercent", "just_chroot", "unmask_dirs", "mount_host_runtime", "work_dir", "rootfs_source", "ro_root", "extra_mountpoint", "extra_ro_mountpoint", "env", "command", "hostname", NULL };
 	for (int i = 0; key_list[i] != NULL; i++) {
 		if (!have_key(key_list[i], buf)) {
 			ruri_error("{red}Invalid config file, there is no key:%s\nHint:\n You can try to use `ruri -C config` to fix the config file{clear}", key_list[i]);
@@ -483,6 +489,9 @@ void ruri_read_config(struct RURI_CONTAINER *_Nonnull container, const char *_No
 	container->use_kvm = k2v_get_key(bool, "use_kvm", buf);
 	// Get hidepid.
 	container->hidepid = k2v_get_key(int, "hidepid", buf);
+	// Get verbose_level.
+	container->verbose_level = k2v_get_key(int, "verbose_level", buf);
+	RURI_VERBOSE_LEVEL = container->verbose_level;
 	// Get oom_score_adj.
 	container->oom_score_adj = k2v_get_key(int, "oom_score_adj", buf);
 	// Get skip_setgroups.
@@ -714,6 +723,12 @@ void ruri_correct_config(const char *_Nonnull path)
 		container.hidepid = RURI_INIT_VALUE;
 	} else {
 		container.hidepid = k2v_get_key(int, "hidepid", buf);
+	}
+	if (!have_key("verbose_level", buf)) {
+		ruri_warning("{green}No key verbose_level found, set to default value (2)\n{clear}");
+		container.verbose_level = 2;
+	} else {
+		container.verbose_level = k2v_get_key(int, "verbose_level", buf);
 	}
 	if (!have_key("cpuset", buf)) {
 		ruri_warning("{green}No key cpuset found, set to NULL\n{clear}");

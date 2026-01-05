@@ -127,7 +127,7 @@ void ruri_show_helps(void)
 	cprintf("{base}  -S, --host-runtime ..........................: Bind-mount /dev/, /sys/, and /proc/ from host\n");
 	cprintf("{base}  -R, --read-only .............................: Mount / as read-only\n");
 	cprintf("{base}  -l, --limit [limit=lin] .....................: Set cpuset/memory limit (*6)\n");
-	cprintf("{base}  -w, --no-warnings ...........................: Disable warnings\n");
+	cprintf("{base}  -w, --no-warnings [0/1/2/3/4] ...............: Set warning/verbose level (*17)\n");
 	cprintf("{base}  -f, --fork ..................................: fork() before executing the command (*7)\n");
 	cprintf("{base}  -j, --just-chroot ...........................: Just chroot, do not create the runtime dirs\n");
 	cprintf("{base}  -W, --work-dir [dir] ........................: Set the working directory in container\n");
@@ -166,6 +166,7 @@ void ruri_show_helps(void)
 	cprintf("{base}(*14) : The value is in the range of -1000 to 1000, but setting a negative value might cause security issues\n");
 	cprintf("{base}(*15) : ruri will ignore SIGTTIN and SIGTTOU by default, enable this option to allow TTY signals in the container\n");
 	cprintf("{base}(*16) : 0=no isolation, 1/2=hidepid, 3=ptrace PID virtualization, 4=FUSE+ptrace virtualization\n");
+	cprintf("{base}(*17) : Warning/verbose level: 0=suppress all, 1=suppress warnings (old -w), 2=normal (default), 3=verbose, 4=debug\n");
 	cprintf("\n{base}Note:\n");
 	cprintf("{base}BSD style usage is partially supported now. For example, you can use `-pW /root`, but `-W/root` is not allowed.\n");
 	cprintf("{base}{clear}\n");

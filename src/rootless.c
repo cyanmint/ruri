@@ -105,13 +105,18 @@ static void init_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 	 * For rootless container, the way to create/mount runtime dir/files is different.
 	 * as we don't have the permission to mount sysfs and mknod(2),
 	 * we need to bind-mount some dirs/files from host.
+	 * For hidepid==4, skip mounting /proc and let FUSE handle it after chroot.
 	 */
 	mount(container->container_dir, container->container_dir, NULL, MS_BIND | MS_REC, NULL);
 	chdir(container->container_dir);
 	mkdir("./sys", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 	mount("/sys", "./sys", NULL, MS_BIND | MS_REC, NULL);
 	mkdir("./proc", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-	mount("proc", "./proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
+	
+	// For hidepid==4, skip mounting /proc as FUSE will handle it after chroot
+	if (container->hidepid != 4) {
+		mount("proc", "./proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
+	}
 	mkdir("./dev", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 	mount("tmpfs", "./dev", "tmpfs", MS_NOSUID, "size=65536k,mode=755");
 	close(open("./dev/tty", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
@@ -445,14 +450,7 @@ void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 		if (!container->just_chroot) {
 			init_rootless_container(container);
 		}
-		// If hidepid == 4, initialize FUSE before entering container
-		if (container->hidepid == 4) {
-#ifndef DISABLE_FUSE
-			ruri_init_fuse_fs(container->container_dir, getpid());
-#else
-			ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
-#endif
-		}
+		// For hidepid==4, FUSE will be mounted inside init_rootless_container() or init_container()
 		usleep(1000);
 		ruri_run_rootless_chroot_container(container);
 	}

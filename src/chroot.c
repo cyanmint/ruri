@@ -117,6 +117,7 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 	 * It'll be run after chroot(2), so `/` is the root dir of container now.
 	 * The device list and permissions are based on common docker containers.
 	 * If -A is not set, we will mask some dirs in /sys and /proc to avoid security issues.
+	 * For hidepid==4, we skip mounting /proc and let FUSE handle it instead.
 	 */
 	// If /proc/1 exists, that means container is already initialized.
 	// I used to check /sys/class/input, but in WSL1, /sys/class/input is not exist.
@@ -127,11 +128,20 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 		mkdir("/sys", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		mkdir("/proc", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		mkdir("/dev", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		
+		// For hidepid==4, skip mounting /proc as FUSE will handle it
+		if (container->hidepid != 4) {
+			if (container->ro_root) {
+				mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, NULL);
+			} else {
+				mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
+			}
+		}
+		
+		// Mount sysfs
 		if (container->ro_root) {
-			mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, NULL);
 			mount("sysfs", "/sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV | MS_RDONLY, NULL);
 		} else {
-			mount("proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
 			mount("sysfs", "/sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, NULL);
 		}
 		mount("tmpfs", "/dev", "tmpfs", MS_NOSUID, "size=65536k,mode=755");
@@ -149,8 +159,22 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 		mount("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NOEXEC | MS_NODEV, devshm_options);
 		usleep(1000);
 		free(devshm_options);
-		// Mount binfmt_misc.
-		mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", 0, NULL);
+		
+		// For hidepid==4, mount FUSE /proc now
+		if (container->hidepid == 4) {
+#ifndef DISABLE_FUSE
+			ruri_init_fuse_fs("/", getpid());
+			// Give FUSE time to fully initialize
+			usleep(FUSE_MOUNT_DELAY_US);
+#else
+			ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
+#endif
+		}
+		
+		// Mount binfmt_misc (needs /proc to be mounted)
+		if (container->hidepid != 4) {
+			mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", 0, NULL);
+		}
 		// Create system runtime files in /dev and then fix permissions.
 		mknod("/dev/null", S_IFCHR, makedev(1, 3));
 		chmod("/dev/null", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
@@ -886,6 +910,18 @@ void ruri_run_rootless_chroot_container(struct RURI_CONTAINER *_Nonnull containe
 		ruri_error("{red}Error: failed to chroot(2) into container QwQ\n");
 	}
 	chdir("/");
+	
+	// For hidepid==4, mount FUSE /proc now (after chroot)
+	if (container->hidepid == 4) {
+#ifndef DISABLE_FUSE
+		ruri_init_fuse_fs("/", getpid());
+		// Give FUSE time to fully initialize
+		usleep(FUSE_MOUNT_DELAY_US);
+#else
+		ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
+#endif
+	}
+	
 	// Change to the work dir.
 	if (container->work_dir != NULL) {
 		if (chdir(container->work_dir) == -1 && !container->no_warnings) {
@@ -972,18 +1008,9 @@ void ruri_run_chroot_container_with_pidvirt(struct RURI_CONTAINER *_Nonnull cont
 		// Child process - initialize ptrace first
 		ruri_init_ptrace_pid();
 		
-		// If hidepid == 4, initialize FUSE before entering container
-		if (container->hidepid == 4) {
-#ifndef DISABLE_FUSE
-			ruri_init_fuse_fs(container->container_dir, getpid());
-#else
-			ruri_error("{red}FUSE support is disabled, hidepid=4 is not available\n");
-#endif
-		}
-		
 		// Run the regular chroot container
-		// Note: hidepid() will be called inside but won't call ruri_init_ptrace_pid()
-		// again since we're already being traced
+		// Note: For hidepid==4, FUSE will be mounted inside init_container()
+		// after chroot, not here
 		ruri_run_chroot_container(container);
 	}
 }
