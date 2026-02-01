@@ -133,11 +133,12 @@ static void init_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 		mount("/dev/kvm", "./dev/kvm", NULL, MS_BIND, NULL);
 	}
 	if (container->fake_binder) {
-		// Mount binderfs for the container (completely isolated from host)
-		// Do NOT use host binderfs to prevent container escape and kernel panics
+		// Mount a NEW binderfs instance for the container (completely isolated from host)
+		// This is NOT a bind-mount of host binderfs - it's a fresh isolated instance
 		mkdir("./dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		// mount() with fs type "binder" creates a NEW binderfs, not a bind-mount
 		if (mount("binder", "./dev/binderfs", "binder", 0, NULL) == 0) {
-			// binderfs mounted successfully, create symlinks to the devices
+			// binderfs mounted successfully - create symlinks to NEW instance devices
 			symlink("binderfs/binder", "./dev/binder");
 			symlink("binderfs/hwbinder", "./dev/hwbinder");
 			symlink("binderfs/vndbinder", "./dev/vndbinder");

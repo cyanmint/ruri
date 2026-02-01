@@ -115,6 +115,8 @@ static bool setup_working_binder(void)
 {
 	/*
 	 * Try to load binder kernel modules for working binder IPC.
+	 * This creates a COMPLETELY NEW binderfs instance for the container.
+	 * We do NOT use or mount the host's /dev/binderfs - this is isolated.
 	 * Returns true if binderfs was successfully mounted, false otherwise.
 	 */
 	int ret;
@@ -129,10 +131,13 @@ static bool setup_working_binder(void)
 	system("modprobe binderfs 2>/dev/null");
 	// Small delay to let modules initialize
 	usleep(100000);
-	// Try to mount binderfs
+	// Create mount point for NEW binderfs instance
 	mkdir("/dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP);
+	// Mount a NEW binderfs filesystem instance (NOT the host's binderfs!)
+	// The mount() call with fs type "binder" creates a fresh isolated instance
 	if (mount("binder", "/dev/binderfs", "binder", 0, NULL) == 0) {
 		// binderfs mounted successfully - we have working binder!
+		// This is a NEW instance, completely isolated from host
 		return true;
 	}
 	// Clean up on failure
