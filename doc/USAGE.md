@@ -386,21 +386,31 @@ Note: This option needs kernel and host support for KVM.
 
 | Option | Description |
 |--------|-------------|
-| `-B`, `--fake-binder` | Enable emulated binder and ashmem devices for redroid |
+| `-B`, `--fake-binder` | Enable binder and ashmem devices for redroid |
 
-Enable emulated binder and ashmem devices for running redroid (Android in container).  
+Enable binder and ashmem devices for running redroid (Android in container).  
 This option sets up `/dev/binder`, `/dev/hwbinder`, `/dev/vndbinder`, and `/dev/ashmem` devices for the container.
 
-**Security note:**
-- **Complete isolation**: This option creates a completely isolated binderfs instance that is separate from the host's binderfs.
-- **No host device access**: The container does NOT access the host's `/dev/binderfs` or `/dev/ashmem` to prevent container escape and kernel panics.
-- **Emulated devices**: If binderfs kernel support is available, a new isolated binderfs is mounted at `/dev/binderfs` inside the container.
-- **Safe fallback**: If binderfs is unavailable, fake character devices or `/dev/null` are used instead (no host device access).
+**Working Binder (requires kernel support):**
+- ruri will attempt to load binder kernel modules (`binder_linux`, `binderfs`) if available
+- If successful, provides fully functional binder IPC mechanism for Android apps
+- Check kernel config: `CONFIG_ANDROID_BINDER_IPC` and `CONFIG_ANDROID_BINDERFS` should be enabled
+- Modules may need to be installed separately on some distributions
 
-**Behavior note:** 
-- In normal mode: Mounts isolated binderfs at `/dev/binderfs` and creates symlinks, or creates fake character devices if mount fails.
-- In rootless mode: Mounts isolated binderfs or bind-mounts `/dev/null` as fallback (device node creation requires privileges).
-- Ashmem device is always emulated, never uses host ashmem.
+**Fallback Mode (dummy devices):**
+- If kernel modules are not available, creates non-functional character devices
+- Allows redroid to start but binder IPC will not work
+- Apps requiring binder may crash or malfunction
+
+**Security note:**
+- **Complete isolation**: Creates isolated binderfs instance separate from host
+- **No host device access**: Never accesses host `/dev/binderfs` or `/dev/ashmem`
+- **Safe operation**: Prevents container escape and kernel panics
+
+**Behavior:** 
+- Normal mode: Attempts module loading and binderfs mount, creates symlinks or fake devices
+- Rootless mode: Same behavior if run with sudo, otherwise uses /dev/null fallback
+- Ashmem is always emulated for security
 
 ---
 

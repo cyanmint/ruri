@@ -267,6 +267,16 @@ void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 	/*
 	 * Setup namespaces and run rootless container.
 	 */
+	// If fake_binder is enabled, try to load kernel modules early
+	// This must be done before entering user namespace
+	if (container->fake_binder && geteuid() == 0) {
+		// Try to load binder modules (requires root)
+		system("modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null");
+		system("modprobe android_binder_ipc 2>/dev/null");
+		system("modprobe binderfs 2>/dev/null");
+		system("modprobe android_binderfs 2>/dev/null");
+		usleep(100000);
+	}
 	if (container->use_rurienv) {
 		ruri_read_info(container, container->container_dir);
 	}
