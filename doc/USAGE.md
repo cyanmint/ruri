@@ -386,17 +386,21 @@ Note: This option needs kernel and host support for KVM.
 
 | Option | Description |
 |--------|-------------|
-| `-B`, `--fake-binder` | Enable binder and ashmem devices for redroid |
+| `-B`, `--fake-binder` | Enable emulated binder and ashmem devices for redroid |
 
-Enable binder and ashmem devices for running redroid (Android in container).  
+Enable emulated binder and ashmem devices for running redroid (Android in container).  
 This option sets up `/dev/binder`, `/dev/hwbinder`, `/dev/vndbinder`, and `/dev/ashmem` devices for the container.
 
+**Security note:**
+- **Complete isolation**: This option creates a completely isolated binderfs instance that is separate from the host's binderfs.
+- **No host device access**: The container does NOT access the host's `/dev/binderfs` or `/dev/ashmem` to prevent container escape and kernel panics.
+- **Emulated devices**: If binderfs kernel support is available, a new isolated binderfs is mounted at `/dev/binderfs` inside the container.
+- **Safe fallback**: If binderfs is unavailable, fake character devices or `/dev/null` are used instead (no host device access).
+
 **Behavior note:** 
-- This option mounts a separate binderfs filesystem at `/dev/binderfs` inside the container (isolated from the host's binderfs).
-- Symlinks are created from `/dev/binder`, `/dev/hwbinder`, and `/dev/vndbinder` to the binderfs devices.
-- If binderfs is not available in the kernel, fake character devices will be created as fallback (in normal mode) or `/dev/null` will be bind-mounted (in rootless mode).
-- For `/dev/ashmem`, if the device exists on the host, it will be bind-mounted; otherwise a fake device is created.
-- This provides proper container isolation with separate binder devices from the host.
+- In normal mode: Mounts isolated binderfs at `/dev/binderfs` and creates symlinks, or creates fake character devices if mount fails.
+- In rootless mode: Mounts isolated binderfs or bind-mounts `/dev/null` as fallback (device node creation requires privileges).
+- Ashmem device is always emulated, never uses host ashmem.
 
 ---
 

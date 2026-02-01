@@ -176,7 +176,8 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 			chmod("/dev/kvm", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		}
 		if (container->fake_binder) {
-			// Mount binderfs for the container (isolated from host)
+			// Mount binderfs for the container (completely isolated from host)
+			// Do NOT use host binderfs to prevent container escape and kernel panics
 			mkdir("/dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 			if (mount("binder", "/dev/binderfs", "binder", 0, NULL) == 0) {
 				// binderfs mounted successfully, create symlinks to the devices
@@ -193,17 +194,9 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 				mknod("/dev/vndbinder", S_IFCHR, makedev(10, 58));
 				chmod("/dev/vndbinder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 			}
-			// Check if ashmem is available on the host
-			struct stat st;
-			if (stat("/dev/ashmem", &st) == 0) {
-				// ashmem device exists, bind-mount it
-				close(open("/dev/ashmem", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
-				mount("/dev/ashmem", "/dev/ashmem", NULL, MS_BIND, NULL);
-			} else {
-				// ashmem not available, create fake device
-				mknod("/dev/ashmem", S_IFCHR, makedev(10, 59));
-				chmod("/dev/ashmem", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
-			}
+			// Always create fake ashmem device (do NOT use host ashmem for security)
+			mknod("/dev/ashmem", S_IFCHR, makedev(10, 59));
+			chmod("/dev/ashmem", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		}
 		// Create some system runtime link files in /dev.
 		symlink("/proc/self/fd", "/dev/fd");
