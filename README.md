@@ -179,6 +179,10 @@ For command line examples, please see `ruri -H`.
 # Run unshare container
   sudo ruri -u /tmp/alpine
 
+# Run redroid (Android in container) with binder devices
+# Use -B option to enable binder/ashmem devices for redroid
+  sudo ruri -B -u /path/to/redroid /init
+
 # Finally, umount the container
   sudo ruri -U /tmp/alpine
 ```
