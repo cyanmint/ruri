@@ -386,6 +386,22 @@ Note: This option needs kernel and host support for KVM.
 
 | Option | Description |
 |--------|-------------|
+| `-B`, `--fake-binder` | Enable binder and ashmem devices for redroid |
+
+Enable binder and ashmem devices for running redroid (Android in container).  
+This option sets up `/dev/binder`, `/dev/hwbinder`, `/dev/vndbinder`, and `/dev/ashmem` devices for the container.
+
+**Behavior note:** 
+- This option mounts a separate binderfs filesystem at `/dev/binderfs` inside the container (isolated from the host's binderfs).
+- Symlinks are created from `/dev/binder`, `/dev/hwbinder`, and `/dev/vndbinder` to the binderfs devices.
+- If binderfs is not available in the kernel, fake character devices will be created as fallback (in normal mode) or `/dev/null` will be bind-mounted (in rootless mode).
+- For `/dev/ashmem`, if the device exists on the host, it will be bind-mounted; otherwise a fake device is created.
+- This provides proper container isolation with separate binder devices from the host.
+
+---
+
+| Option | Description |
+|--------|-------------|
 | `-I`, `--char-dev [device] [major] [minor]` | Add a character device to the container |
 
 Add a character device to the container, for example `-I kvm 10 232` or `-I dri/card0 226 0`.  

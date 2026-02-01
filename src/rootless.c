@@ -133,14 +133,34 @@ static void init_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 		mount("/dev/kvm", "./dev/kvm", NULL, MS_BIND, NULL);
 	}
 	if (container->fake_binder) {
-		close(open("./dev/binder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
-		mount("/dev/null", "./dev/binder", NULL, MS_BIND, NULL);
-		close(open("./dev/hwbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
-		mount("/dev/null", "./dev/hwbinder", NULL, MS_BIND, NULL);
-		close(open("./dev/vndbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
-		mount("/dev/null", "./dev/vndbinder", NULL, MS_BIND, NULL);
-		close(open("./dev/ashmem", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
-		mount("/dev/null", "./dev/ashmem", NULL, MS_BIND, NULL);
+		// Mount binderfs for the container (isolated from host)
+		mkdir("./dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		if (mount("binder", "./dev/binderfs", "binder", 0, NULL) == 0) {
+			// binderfs mounted successfully, create symlinks to the devices
+			symlink("/dev/binderfs/binder", "./dev/binder");
+			symlink("/dev/binderfs/hwbinder", "./dev/hwbinder");
+			symlink("/dev/binderfs/vndbinder", "./dev/vndbinder");
+		} else {
+			// binderfs mount failed, bind-mount /dev/null as fallback
+			rmdir("./dev/binderfs");
+			close(open("./dev/binder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/binder", NULL, MS_BIND, NULL);
+			close(open("./dev/hwbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/hwbinder", NULL, MS_BIND, NULL);
+			close(open("./dev/vndbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/vndbinder", NULL, MS_BIND, NULL);
+		}
+		// Check if ashmem is available on the host
+		struct stat st;
+		if (stat("/dev/ashmem", &st) == 0) {
+			// ashmem device exists, bind-mount it
+			close(open("./dev/ashmem", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/ashmem", "./dev/ashmem", NULL, MS_BIND, NULL);
+		} else {
+			// ashmem not available, bind-mount /dev/null as fallback
+			close(open("./dev/ashmem", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/ashmem", NULL, MS_BIND, NULL);
+		}
 	}
 	symlink("/proc/self/fd", "./dev/fd");
 	symlink("/proc/self/fd/0", "./dev/stdin");
