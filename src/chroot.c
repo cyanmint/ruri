@@ -175,6 +175,16 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 			mknod("/dev/kvm", S_IFCHR, makedev(10, 232));
 			chmod("/dev/kvm", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		}
+		if (container->fake_binder) {
+			mknod("/dev/binder", S_IFCHR, makedev(10, 56));
+			chmod("/dev/binder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+			mknod("/dev/hwbinder", S_IFCHR, makedev(10, 57));
+			chmod("/dev/hwbinder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+			mknod("/dev/vndbinder", S_IFCHR, makedev(10, 58));
+			chmod("/dev/vndbinder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+			mknod("/dev/ashmem", S_IFCHR, makedev(10, 59));
+			chmod("/dev/ashmem", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		}
 		// Create some system runtime link files in /dev.
 		symlink("/proc/self/fd", "/dev/fd");
 		symlink("/proc/self/fd/0", "/dev/stdin");

@@ -136,6 +136,7 @@ void ruri_show_helps(void)
 	cprintf("{base}  -t, --hostname [hostname] ...................: Set the hostname of the container (*9)\n");
 	cprintf("{base}  -x, --no-network ............................: Disable network (*10)\n");
 	cprintf("{base}  -K, --use-kvm ...............................: Enable /dev/kvm for container\n");
+	cprintf("{base}  -B, --fake-binder ...........................: Enable fake binder/ashmem devices for redroid\n");
 	cprintf("{base}  -I, --char-dev [device] [major] [minor] .....: Add a character device to container (*11)\n");
 	cprintf("{base}  -i, --hidepid [1/2] .........................: Hidepid for /proc\n");
 	cprintf("{base}  -T, --timens-offset [monotonic] [realtime]...: Set time offset for timens (*12)\n");

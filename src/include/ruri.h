@@ -193,6 +193,8 @@ struct RURI_CONTAINER {
 	bool no_network;
 	// Use kvm.
 	bool use_kvm;
+	// Use fake binder and ashmem devices for redroid.
+	bool fake_binder;
 	// Char devices.
 	char *_Nonnull char_devs[RURI_MAX_CHAR_DEVS];
 	// Hidepid for procfs.
