@@ -173,38 +173,72 @@ static const struct fuse_operations binder_oper = {
 // Launch binder FUSE driver in background
 int ruri_start_binder_driver(const char *mountpoint)
 {
+	// First, ensure mountpoint exists and is a directory
+	struct stat st;
+	if (stat(mountpoint, &st) != 0) {
+		mkdir(mountpoint, 0755);
+	}
+	
 	pid_t pid = fork();
 	
 	if (pid < 0) {
+		perror("fork failed");
 		return -1;
 	}
 	
 	if (pid == 0) {
 		// Child process - run FUSE
+		// Become session leader to detach from parent
+		setsid();
+		
+		// Close standard file descriptors
+		close(STDIN_FILENO);
+		close(STDOUT_FILENO);
+		close(STDERR_FILENO);
+		
+		// Open /dev/null for stdio
+		int devnull = open("/dev/null", O_RDWR);
+		if (devnull >= 0) {
+			dup2(devnull, STDIN_FILENO);
+			dup2(devnull, STDOUT_FILENO);
+			dup2(devnull, STDERR_FILENO);
+			if (devnull > 2) {
+				close(devnull);
+			}
+		}
+		
 		char *argv[] = {
 			"ruri_binder",
-			"-f",  // foreground
+			"-f",  // foreground (required for daemon)
 			"-o", "allow_other",
 			"-o", "default_permissions",
 			(char *)mountpoint,
 			NULL
 		};
 		
-		// Redirect output to /dev/null to avoid clutter
-		int devnull = open("/dev/null", O_WRONLY);
-		if (devnull >= 0) {
-			dup2(devnull, STDOUT_FILENO);
-			dup2(devnull, STDERR_FILENO);
-			close(devnull);
-		}
-		
-		fuse_main(6, argv, &binder_oper, NULL);
-		exit(0);
+		// Run FUSE - this blocks until unmount
+		int ret = fuse_main(6, argv, &binder_oper, NULL);
+		exit(ret);
 	}
 	
-	// Parent process - wait a bit for FUSE to initialize
-	usleep(200000); // 200ms
-	return 0;
+	// Parent process - wait for FUSE to initialize
+	sleep(1); // Give FUSE time to mount
+	
+	// Verify that FUSE mounted successfully
+	char testfile[512];
+	snprintf(testfile, sizeof(testfile), "%s/binder", mountpoint);
+	if (stat(testfile, &st) == 0) {
+		return 0; // Success - binder file exists
+	}
+	
+	// Still not there, wait a bit more
+	sleep(1);
+	if (stat(testfile, &st) == 0) {
+		return 0; // Success
+	}
+	
+	// Failed to mount
+	return -1;
 }
 
 // Stop binder driver (unmount)

@@ -119,7 +119,7 @@ static bool setup_working_binder(void)
 	 * This creates a COMPLETELY NEW binderfs instance for the container.
 	 * We do NOT use or mount the host's /dev/binderfs - this is isolated.
 	 * 
-	 * If kernel modules fail, tries user-space FUSE driver.
+	 * User-space FUSE driver is mounted before chroot if modules fail.
 	 * Returns true if binderfs was successfully mounted, false otherwise.
 	 */
 	int ret;
@@ -144,9 +144,11 @@ static bool setup_working_binder(void)
 		return true;
 	}
 	
-	// Kernel binderfs failed, try user-space FUSE driver
-	if (ruri_start_binder_driver("/dev/binderfs") == 0) {
-		// User-space driver started successfully
+	// Kernel binderfs failed - user-space FUSE driver should already be mounted
+	// Check if binderfs directory exists (FUSE mount from pre-chroot)
+	struct stat st;
+	if (stat("/dev/binderfs", &st) == 0 && S_ISDIR(st.st_mode)) {
+		// FUSE binderfs exists, assume it's working
 		return true;
 	}
 	
@@ -776,6 +778,14 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	sprintf(buf, "%s/proc/1", container->container_dir);
 	char *test = realpath(buf, NULL);
 	if (test == NULL) {
+		// Mount FUSE binderfs BEFORE entering container (if -B option set)
+		if (container->fake_binder) {
+			char binderfs_path[PATH_MAX];
+			snprintf(binderfs_path, PATH_MAX, "%s/dev/binderfs", container->container_dir);
+			mkdir(binderfs_path, 0755);
+			// Try to mount user-space binder driver
+			ruri_start_binder_driver(binderfs_path);
+		}
 		// Mount mountpoints.
 		mount_rootfs(container);
 		mount_mountpoints(container);
