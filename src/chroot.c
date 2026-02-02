@@ -28,6 +28,7 @@
  *
  */
 #include "include/ruri.h"
+#include "include/binder_driver.h"
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -117,6 +118,8 @@ static bool setup_working_binder(void)
 	 * Try to load binder kernel modules for working binder IPC.
 	 * This creates a COMPLETELY NEW binderfs instance for the container.
 	 * We do NOT use or mount the host's /dev/binderfs - this is isolated.
+	 * 
+	 * If kernel modules fail, tries user-space FUSE driver.
 	 * Returns true if binderfs was successfully mounted, false otherwise.
 	 */
 	int ret;
@@ -140,6 +143,13 @@ static bool setup_working_binder(void)
 		// This is a NEW instance, completely isolated from host
 		return true;
 	}
+	
+	// Kernel binderfs failed, try user-space FUSE driver
+	if (ruri_start_binder_driver("/dev/binderfs") == 0) {
+		// User-space driver started successfully
+		return true;
+	}
+	
 	// Clean up on failure
 	rmdir("/dev/binderfs");
 	// Note: Fallback to dummy devices will be handled by caller
