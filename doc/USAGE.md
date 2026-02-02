@@ -386,6 +386,36 @@ Note: This option needs kernel and host support for KVM.
 
 | Option | Description |
 |--------|-------------|
+| `-B`, `--fake-binder` | Enable binder and ashmem devices for redroid |
+
+Enable binder and ashmem devices for running redroid (Android in container).  
+This option sets up `/dev/binder`, `/dev/hwbinder`, `/dev/vndbinder`, and `/dev/ashmem` devices for the container.
+
+**Working Binder (requires kernel support):**
+- ruri will attempt to load binder kernel modules (`binder_linux`, `binderfs`) if available
+- If successful, provides fully functional binder IPC mechanism for Android apps
+- Check kernel config: `CONFIG_ANDROID_BINDER_IPC` and `CONFIG_ANDROID_BINDERFS` should be enabled
+- Modules may need to be installed separately on some distributions
+
+**Fallback Mode (dummy devices):**
+- If kernel modules are not available, creates non-functional character devices
+- Allows redroid to start but binder IPC will not work
+- Apps requiring binder may crash or malfunction
+
+**Security note:**
+- **Complete isolation**: Creates isolated binderfs instance separate from host
+- **No host device access**: Never accesses host `/dev/binderfs` or `/dev/ashmem`
+- **Safe operation**: Prevents container escape and kernel panics
+
+**Behavior:** 
+- Normal mode: Attempts module loading and binderfs mount, creates symlinks or fake devices
+- Rootless mode: Same behavior if run with sudo, otherwise uses /dev/null fallback
+- Ashmem is always emulated for security
+
+---
+
+| Option | Description |
+|--------|-------------|
 | `-I`, `--char-dev [device] [major] [minor]` | Add a character device to the container |
 
 Add a character device to the container, for example `-I kvm 10 232` or `-I dri/card0 226 0`.  

@@ -132,6 +132,30 @@ static void init_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 		close(open("./dev/kvm", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
 		mount("/dev/kvm", "./dev/kvm", NULL, MS_BIND, NULL);
 	}
+	if (container->fake_binder) {
+		// Mount a NEW binderfs instance for the container (completely isolated from host)
+		// This is NOT a bind-mount of host binderfs - it's a fresh isolated instance
+		mkdir("./dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		// mount() with fs type "binder" creates a NEW binderfs, not a bind-mount
+		if (mount("binder", "./dev/binderfs", "binder", 0, NULL) == 0) {
+			// binderfs mounted successfully - create symlinks to NEW instance devices
+			symlink("binderfs/binder", "./dev/binder");
+			symlink("binderfs/hwbinder", "./dev/hwbinder");
+			symlink("binderfs/vndbinder", "./dev/vndbinder");
+		} else {
+			// binderfs mount failed, bind-mount /dev/null as fallback
+			rmdir("./dev/binderfs");
+			close(open("./dev/binder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/binder", NULL, MS_BIND, NULL);
+			close(open("./dev/hwbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/hwbinder", NULL, MS_BIND, NULL);
+			close(open("./dev/vndbinder", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+			mount("/dev/null", "./dev/vndbinder", NULL, MS_BIND, NULL);
+		}
+		// Always bind-mount /dev/null for ashmem (do NOT use host ashmem for security)
+		close(open("./dev/ashmem", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP));
+		mount("/dev/null", "./dev/ashmem", NULL, MS_BIND, NULL);
+	}
 	symlink("/proc/self/fd", "./dev/fd");
 	symlink("/proc/self/fd/0", "./dev/stdin");
 	symlink("/proc/self/fd/1", "./dev/stdout");
@@ -244,6 +268,16 @@ void ruri_run_rootless_container(struct RURI_CONTAINER *_Nonnull container)
 	/*
 	 * Setup namespaces and run rootless container.
 	 */
+	// If fake_binder is enabled, try to load kernel modules early
+	// This must be done before entering user namespace
+	if (container->fake_binder && geteuid() == 0) {
+		// Try to load binder modules (requires root)
+		system("modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null");
+		system("modprobe android_binder_ipc 2>/dev/null");
+		system("modprobe binderfs 2>/dev/null");
+		system("modprobe android_binderfs 2>/dev/null");
+		usleep(100000);
+	}
 	if (container->use_rurienv) {
 		ruri_read_info(container, container->container_dir);
 	}

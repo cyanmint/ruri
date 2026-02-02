@@ -420,6 +420,10 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 		else if (strcmp(argv[index], "-K") == 0 || strcmp(argv[index], "--use-kvm") == 0) {
 			container->use_kvm = true;
 		}
+		// Use fake binder and ashmem devices.
+		else if (strcmp(argv[index], "-B") == 0 || strcmp(argv[index], "--fake-binder") == 0) {
+			container->fake_binder = true;
+		}
 		// Hidepid.
 		else if (strcmp(argv[index], "-i") == 0 || strcmp(argv[index], "--hidepid") == 0) {
 			index++;
@@ -789,6 +793,9 @@ static void parse_args(int argc, char **_Nonnull argv, struct RURI_CONTAINER *_N
 					break;
 				case 'K':
 					container->use_kvm = true;
+					break;
+				case 'B':
+					container->fake_binder = true;
 					break;
 				case 'b':
 					background = true;

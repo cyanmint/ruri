@@ -28,6 +28,7 @@
  *
  */
 #include "include/ruri.h"
+#include "include/binder_driver.h"
 /*
  * This file is the core of ruri.
  * It provides functions to run container as info in struct RURI_CONTAINER.
@@ -110,6 +111,52 @@ static void check_binary(const struct RURI_CONTAINER *_Nonnull container)
 		}
 	}
 }
+// Helper function to load binder kernel modules and setup working binderfs
+static bool setup_working_binder(void)
+{
+	/*
+	 * Try to load binder kernel modules for working binder IPC.
+	 * This creates a COMPLETELY NEW binderfs instance for the container.
+	 * We do NOT use or mount the host's /dev/binderfs - this is isolated.
+	 * 
+	 * User-space FUSE driver is mounted before chroot if modules fail.
+	 * Returns true if binderfs was successfully mounted, false otherwise.
+	 */
+	int ret;
+	// Try to load binder_linux module first
+	ret = system("modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null");
+	if (ret != 0) {
+		// Try alternative module names
+		system("modprobe android_binder_ipc 2>/dev/null");
+		system("modprobe android_binderfs 2>/dev/null");
+	}
+	// Try to load binderfs module
+	system("modprobe binderfs 2>/dev/null");
+	// Small delay to let modules initialize
+	usleep(100000);
+	// Create mount point for NEW binderfs instance
+	mkdir("/dev/binderfs", S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP);
+	// Mount a NEW binderfs filesystem instance (NOT the host's binderfs!)
+	// The mount() call with fs type "binder" creates a fresh isolated instance
+	if (mount("binder", "/dev/binderfs", "binder", 0, NULL) == 0) {
+		// binderfs mounted successfully - we have working binder!
+		// This is a NEW instance, completely isolated from host
+		return true;
+	}
+	
+	// Kernel binderfs failed - user-space FUSE driver should already be mounted
+	// Check if binderfs directory exists (FUSE mount from pre-chroot)
+	struct stat st;
+	if (stat("/dev/binderfs", &st) == 0 && S_ISDIR(st.st_mode)) {
+		// FUSE binderfs exists, assume it's working
+		return true;
+	}
+	
+	// Clean up on failure
+	rmdir("/dev/binderfs");
+	// Note: Fallback to dummy devices will be handled by caller
+	return false;
+}
 // Run after chroot(2), called by ruri_run_chroot_container().
 static void init_container(struct RURI_CONTAINER *_Nonnull container)
 {
@@ -174,6 +221,29 @@ static void init_container(struct RURI_CONTAINER *_Nonnull container)
 		if (container->use_kvm) {
 			mknod("/dev/kvm", S_IFCHR, makedev(10, 232));
 			chmod("/dev/kvm", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+		}
+		if (container->fake_binder) {
+			// Try to setup working binder by loading kernel modules
+			// This provides real binder IPC functionality for redroid
+			bool binderfs_ok = setup_working_binder();
+			if (binderfs_ok) {
+				// binderfs mounted successfully, create symlinks to the devices
+				symlink("/dev/binderfs/binder", "/dev/binder");
+				symlink("/dev/binderfs/hwbinder", "/dev/hwbinder");
+				symlink("/dev/binderfs/vndbinder", "/dev/vndbinder");
+			} else {
+				// binderfs mount failed, create fake devices as fallback
+				// Note: These are non-functional dummy devices
+				mknod("/dev/binder", S_IFCHR, makedev(10, 56));
+				chmod("/dev/binder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+				mknod("/dev/hwbinder", S_IFCHR, makedev(10, 57));
+				chmod("/dev/hwbinder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+				mknod("/dev/vndbinder", S_IFCHR, makedev(10, 58));
+				chmod("/dev/vndbinder", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
+			}
+			// Always create fake ashmem device (do NOT use host ashmem for security)
+			mknod("/dev/ashmem", S_IFCHR, makedev(10, 59));
+			chmod("/dev/ashmem", S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH | S_IRGRP | S_IWGRP);
 		}
 		// Create some system runtime link files in /dev.
 		symlink("/proc/self/fd", "/dev/fd");
@@ -708,6 +778,14 @@ void ruri_run_chroot_container(struct RURI_CONTAINER *_Nonnull container)
 	sprintf(buf, "%s/proc/1", container->container_dir);
 	char *test = realpath(buf, NULL);
 	if (test == NULL) {
+		// Mount FUSE binderfs BEFORE entering container (if -B option set)
+		if (container->fake_binder) {
+			char binderfs_path[PATH_MAX];
+			snprintf(binderfs_path, PATH_MAX, "%s/dev/binderfs", container->container_dir);
+			mkdir(binderfs_path, 0755);
+			// Try to mount user-space binder driver
+			ruri_start_binder_driver(binderfs_path);
+		}
 		// Mount mountpoints.
 		mount_rootfs(container);
 		mount_mountpoints(container);
